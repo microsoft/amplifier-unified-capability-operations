@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-02",
+  "sourceRevision": "9bb0fbc593d8a0530c948db051993535fa0f7aee",
+  "relocatedCheckout": true,
+  "environment": {
+    "os": "macOS arm64",
+    "node": "25.2.1",
+    "python": "3.13.11"
+  },
+  "tests": {
+    "nodePassed": 1,
+    "pythonPassed": 9
+  },
+  "limits": [
+    "Offline component fixtures and explicitly owned consumers; no production host or real-account adoption.",
+    "Linux Node22/24 CI configured; hosted outcomes are independent."
+  ]
+}
