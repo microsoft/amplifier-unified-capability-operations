@@ -25,12 +25,14 @@ async def setup(tmp_path):
             if behavior.get('cold'):raise ValueError('No current worker')
             return {'task':task}
         if method=='submitObservation':
-            supplied=args['input'];proof=await owner.authorize(SID,{'inputId':supplied['commandId'],**{k:v for k,v in supplied.items() if k!='commandId' and not k.startswith('expected')}})
+            if behavior.get('coldAdmission'):return {'accepted':False,'executed':False,'reason':'waiting_worker'}
+            supplied=args['input'];controls['executionRevision']+=1
+            controls['observationAdmission']={**{key:value for key,value in supplied.items() if key not in {'commandId','outcome'}},'inputId':supplied['commandId'],'admittedExecutionRevision':controls['executionRevision'],'status':'dispatching'}
+            proof=await owner.authorize(SID,{'inputId':supplied['commandId'],**{k:v for k,v in supplied.items() if k!='commandId' and not k.startswith('expected')}})
             assert proof['admitted'],proof
             if behavior.get('unknown'):raise ValueError('Lost acknowledgement')
-            if behavior.get('coldAdmission'):return {'accepted':False,'executed':False,'reason':'waiting_worker'}
             return {'accepted':True,'turnId':supplied['commandId']}
-        if method=='waitForTurn':return behavior.get('receipt',{'status':'completed','workContinues':False})
+        if method=='waitForTurn':return {**behavior.get('receipt',{'status':'completed','workContinues':False}),'observationAdmission':controls.get('observationAdmission')}
         if method=='readUserMessage':return {'id':'human','role':'user','inputOrigin':behavior.get('origin','user'),'text':'Watch this exact source','provenance':{'source':'host-admission'}}
         if method=='questionDependency':return {'text':'Explicit answer'}
         raise AssertionError(method)
@@ -145,4 +147,31 @@ async def test_25k_cold_records_do_not_expand_due_scan_or_selected_pages(tmp_pat
         assert owner.store.due(100)[0]['id']==watch['id'];assert len(owner.store.page('watch',SID)['items'])==1;assert len(steps)<20
         plan=owner.store.db.execute("EXPLAIN QUERY PLAN SELECT body FROM records WHERE kind='watch' AND state='active' AND due<=? ORDER BY due,id LIMIT 16",(100,)).fetchall()
         assert any('records_due' in row['detail'] for row in plan)
+    finally:await owner.close()
+
+async def test_exact_control_receipt_does_not_misattribute_later_watch_state(tmp_path):
+    owner,action,create,_,_,_,_,_,_,_,_,_,_,_=await setup(tmp_path)
+    try:
+        watch=await create()
+        await action('pause',{'id':watch['id'],'expectedRevision':1,'requestId':'pause1'})
+        await action('cancel',{'id':watch['id'],'expectedRevision':2,'requestId':'cancel1'})
+        prior=await action('request',{'requestId':'pause1','operation':'observation.pause'})
+        assert prior['watch']['status']=='cancelled'
+        assert prior['receipt']['appliedRevision']==2 and prior['receipt']['operation']=='observation.pause'
+        assert (await action('request',{'requestId':'pause1'}))['receipt'] is None
+    finally:await owner.close()
+
+@pytest.mark.parametrize('field,value',[('inputId','different'),('taskRevision',2),('expectedExecutionRevision',2),('expectedInterruptionRevision',1),('expectedConfigurationHash','other'),('status','completed')])
+async def test_native_admission_requires_its_exact_host_revision_proof(tmp_path,field,value):
+    owner,_,create,tick,_,controls,_,outcome,_,_,_,_,_,_=await setup(tmp_path)
+    try:
+        watch=await create();outcome['status']='actionable';await tick()
+        item=owner.store.phase(owner.store.page('outbox',SID)['items'][0],'submitting')
+        supplied=owner.input(watch,item)
+        controls['executionRevision']=1
+        controls['observationAdmission']={**{k:v for k,v in supplied.items() if k not in {'commandId','outcome'}},'inputId':supplied['commandId'],'admittedExecutionRevision':1,'status':'dispatching'}
+        args={'inputId':supplied['commandId'],**{k:v for k,v in supplied.items() if k!='commandId' and not k.startswith('expected')}}
+        assert (await owner.authorize(SID,args))['admitted'] is True
+        controls['observationAdmission'][field]=value
+        assert (await owner.authorize(SID,args))['admitted'] is False
     finally:await owner.close()

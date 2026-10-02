@@ -1,6 +1,7 @@
 """Quiet watches over explicit MCP and host contracts; no app snapshots or native paths."""
 import asyncio
 import copy
+import json
 import time
 import uuid
 from .observation_store import Store,digest,encoded
@@ -34,11 +35,18 @@ class Observations:
         if not row or row.get('role')!='user' or row.get('inputOrigin') not in {'ui','user','voice'} or row.get('questionId') or row.get('scheduledRunId') or row.get('provenance',{}).get('source')!='host-admission':raise ValueError('Cite the actual host-admitted human request; imported and generated inputs cannot authorize watches')
         if previous and previous['authorization'].get('messageId')==row['id']:raise ValueError('Resume needs renewed human authority')
         return {'origin':origin,'messageId':row['id'],'textDigest':digest(row['text']),'at':self.clock()}
-    async def reason(self,watch):
+    async def reason(self,watch,*,handoff=None,authorizing=False):
         try:
             session,task=await self.state(watch['sessionId'])
             if session.get('relocationFence') or session.get('configurationBusy'):return 'Execution configuration is changing'
-            for field in ('executionRevision','interruptionRevision','configurationHash','nativeSessionId'):
+            expected=handoff.get('executionRevision',watch['executionRevision']) if handoff else watch['executionRevision']
+            if authorizing:
+                proof=session.get('observationAdmission') or {}
+                required={'inputId':handoff['inputId'],'watchId':watch['id'],'taskId':watch['taskId'],'taskRevision':watch['taskRevision'],'expectedExecutionRevision':expected,'expectedInterruptionRevision':watch['interruptionRevision'],'expectedConfigurationHash':watch['configurationHash'],'admittedExecutionRevision':expected+1,'status':'dispatching'}
+                if any(proof.get(key)!=value for key,value in required.items()):return 'The exact host observation admission is unavailable'
+                expected+=1
+            if session.get('executionRevision')!=expected:return 'The user stopped or changed the execution context'
+            for field in ('interruptionRevision','configurationHash','nativeSessionId'):
                 if session.get(field)!=watch.get(field):return 'The user stopped or changed the execution context'
             if (task['id'],task['revision'],task.get('status'))!=(watch['taskId'],watch['taskRevision'],'active'):return 'Persisted task authority changed'
             for identity in task.get('questionIds',[]):await self.call('questionDependency',watch['sessionId'],id=identity)
@@ -72,7 +80,9 @@ class Observations:
             watch=self.store.get('watch',args['id'],sid);runs=self.store.page('run',sid,watch=watch['id'],limit=args.get('limit',25),cursor=args.get('cursor'));handoffs=self.store.page('outbox',sid,watch=watch['id'])
             return {'watch':watch,'runs':runs['items'],'nextCursor':runs['nextCursor'],'handoffs':handoffs['items']}
         if operation=='observation.request':
-            row=self.store.db.execute('SELECT watch FROM commands WHERE session=? AND id=?',(sid,'observation.create:'+args['requestId'])).fetchone();return {'watch':self.store.get('watch',row['watch'],sid) if row else None}
+            requested=args.get('operation','observation.create')
+            row=self.store.db.execute('SELECT watch,receipt FROM commands WHERE session=? AND id=?',(sid,requested+':'+args['requestId'])).fetchone()
+            return {'watch':self.store.get('watch',row['watch'],sid) if row else None,'receipt':(json.loads(row['receipt']) if row['receipt'] else {'status':'legacy_observed','watchId':row['watch']}) if row else None}
         if operation=='observation.preview':return await self.review(sid,await self.configuration(sid,args))
         if operation=='observation.qualify':
             if origin!='ui':raise ValueError('Only an explicit operator action can qualify source code')
@@ -101,7 +111,9 @@ class Observations:
             else:raise ValueError('Unadvertised watch action')
             watch.update(revision=(previous['revision'] if previous else 0)+1,updatedAt=self.clock())
             with self.store.db:
-                self.store.put('watch',watch);self.store.db.execute('INSERT INTO commands VALUES(?,?,?,?)',(sid,key,intent,watch['id']))
+                self.store.put('watch',watch)
+                receipt={'operation':operation,'requestId':request,'watchId':watch['id'],'appliedRevision':watch['revision'],'status':'applied','createdAt':self.clock()}
+                self.store.db.execute('INSERT INTO commands(session,id,fingerprint,watch,receipt) VALUES(?,?,?,?,?)',(sid,key,intent,watch['id'],encoded(receipt)))
                 if watch['status'] in {'paused','cancelled'}:
                     for item in self.store.page('outbox',sid,watch=watch['id'])['items']:
                         if item['phase'] in {'pending','waiting_worker'}:item.update(phase='suppressed');self.store.put('outbox',item)
@@ -157,12 +169,12 @@ class Observations:
         if reason:await self.reviewed_again(watch,reason)
         elif outcome['status']!='pending' or run['phase']=='discarded':await self.changed(watch['sessionId'])
     @staticmethod
-    def input(watch,item):return {'commandId':item['inputId'],'watchId':watch['id'],'taskId':watch['taskId'],'taskRevision':watch['taskRevision'],'outcome':item['outcome'],'expectedExecutionRevision':watch['executionRevision'],'expectedInterruptionRevision':watch['interruptionRevision'],'expectedConfigurationHash':watch['configurationHash']}
+    def input(watch,item):return {'commandId':item['inputId'],'watchId':watch['id'],'taskId':watch['taskId'],'taskRevision':watch['taskRevision'],'outcome':item['outcome'],'expectedExecutionRevision':item.get('executionRevision',watch['executionRevision']),'expectedInterruptionRevision':watch['interruptionRevision'],'expectedConfigurationHash':watch['configurationHash']}
     async def authorize(self,sid,args):
         item=self.store.get('outbox',args.get('inputId'),sid);watch=self.store.get('watch',item['watchId'],sid)
         expected={k:v for k,v in self.input(watch,item).items() if not k.startswith('expected') and k!='commandId'};expected['inputId']=item['inputId']
         if args!=expected or item['phase'] not in {'submitting','accepted'} or watch['status']!='ended':return {'admitted':False,'reason':'Exact saved watch result is no longer authorized'}
-        reason=await self.reason(watch);return {'admitted':reason is None,'reason':reason}
+        reason=await self.reason(watch,handoff=item,authorizing=True);return {'admitted':reason is None,'reason':reason}
     async def handoff(self,item):
         watch=self.store.get('watch',item['watchId']);sid=watch['sessionId']
         if item['phase']=='accepted':
@@ -170,13 +182,16 @@ class Observations:
             except Exception:self.store.phase(item,'unknown',detail='Host receipt is unavailable; admitted work will not replay');await self.changed(sid);return
             if receipt.get('workContinues'):self.store.phase(item,'accepted',nextDue=self.clock()+2);return
             if receipt.get('executed') is False and receipt.get('retryEligibility')=='waiting_worker':
-                self.store.phase(item,'waiting_worker',nextDue=self.clock()+15,detail='Host confirmed no execution; exact saved input remains eligible for an existing worker');await self.changed(sid);return
+                expected=item.get('executionRevision',watch['executionRevision'])
+                proof=receipt.get('observationAdmission') or {}
+                if proof.get('inputId')==item['inputId'] and proof.get('expectedExecutionRevision')==expected and proof.get('admittedExecutionRevision')==expected+1:
+                    self.store.phase(item,'waiting_worker',executionRevision=expected+1,nextDue=self.clock()+15,detail='Host confirmed no execution; exact saved input remains eligible for an existing worker');await self.changed(sid);return
             phase='completed' if receipt.get('status')=='completed' else 'unknown' if receipt.get('status')=='unknown' else 'failed'
             evidence={key:receipt[key] for key in ('generation_id','status','completed','workContinues') if key in receipt}
             if receipt.get('detail'):evidence['detail']=str(receipt['detail'])[:2000]
             self.store.phase(item,phase,receipt=evidence);await self.changed(sid);return
         if watch['status']!='ended':self.store.phase(item,'suppressed');return
-        reason=await self.reason(watch)
+        reason=await self.reason(watch,handoff=item)
         if reason:return await self.reviewed_again(watch,reason)
         session=await self.call('inspectSession',sid)
         if session.get('activeTurnId') or session.get('status') not in {'idle','ready'}:self.store.phase(item,item['phase'],nextDue=self.clock()+2);return

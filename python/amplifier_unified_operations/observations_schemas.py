@@ -14,7 +14,7 @@ def definitions(schema, string):
         'observation.observers': ('Read qualified observation contracts and current eligibility without connecting or preparing a provider.', schema(sid)),
         'observation.preview': ('Preview a user-requested quiet watch against persisted task authority. Does not prepare a worker or provider.', schema({**sid, **config, 'sourceMessageId': string(200)}, [*sid, *CONFIG])),
         'observation.create': ('Arm the exact reviewed quiet observation. Cite actual human sourceMessageId; stable requestId returns the original watch on retry, never rearms it.', schema({**sid, **config, **review}, [*sid, *CONFIG, 'previewHash', 'requestId'])),
-        'observation.request': ('Read an earlier watch creation by stable request identity without replay.', schema({**sid, 'requestId': string(200)})),
+        'observation.request': ('Read one exact watch command receipt and current watch without replay.', schema({**sid, 'requestId': string(200),'operation':{'enum':['observation.create','observation.pause','observation.cancel','observation.resume']}},[*sid,'requestId'])),
         'observation.list': ('Read quiet watches for this conversation.', schema(sid)),
         'observation.read': ('Read exact quiet watch and bounded audit; never run the observer.', schema(identity)),
         'observation.report': ('Read the same durable observation report; source callbacks cannot author results through this action.', schema(identity)),

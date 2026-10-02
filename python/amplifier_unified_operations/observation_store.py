@@ -21,9 +21,10 @@ class Store:
         CREATE INDEX IF NOT EXISTS records_watch ON records(kind,watch,created,id);
         CREATE INDEX IF NOT EXISTS records_due ON records(kind,state,due,id);
         CREATE INDEX IF NOT EXISTS outbox_due ON records(due,id) WHERE kind='outbox' AND state IN ('pending','waiting_worker','accepted');
-        CREATE TABLE IF NOT EXISTS commands(session TEXT,id TEXT,fingerprint TEXT,watch TEXT,PRIMARY KEY(session,id));
+        CREATE TABLE IF NOT EXISTS commands(session TEXT,id TEXT,fingerprint TEXT,watch TEXT,receipt TEXT,PRIMARY KEY(session,id));
         CREATE TABLE IF NOT EXISTS terminals(watch TEXT PRIMARY KEY,input TEXT UNIQUE);
         ''');os.chmod(path,0o600)
+        if 'receipt' not in {row['name'] for row in self.db.execute('PRAGMA table_info(commands)')}:self.db.execute('ALTER TABLE commands ADD COLUMN receipt TEXT')
         # The parent owns an exclusive process lease before constructing this store.
         with self.db:
             self.db.execute("UPDATE records SET state='abandoned_read',body=json_set(body,'$.phase','abandoned_read') WHERE kind='run' AND state='reading'")

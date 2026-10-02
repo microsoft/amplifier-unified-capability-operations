@@ -127,7 +127,16 @@ generated messages cannot grant authority. Operator source qualification is a
 separate explicit action. Automatic presentation currently refuses requests until
 an actual client grant is connected. Legacy watch databases are not yet imported.
 
-Qualification: 29 Python cases and three real stdio owner tests pass, including
+Qualification: 36 Python cases and three real stdio owner tests pass, including
 25,000 cold records, typed reentrant admission, task/stop/source/cancel/expiry races,
 known cold refusal, and uncertain-restart recovery. Actual MCP SDK and native
 runtime paths have separate owner checks; the composed graph has its own acceptance.
+
+`observation.request {requestId,operation?}` defaults to creation and also reads
+exact pause/cancel/resume receipts. `receipt.appliedRevision` is immutable; `watch`
+is current state and may have changed later. Pre-receipt candidate records return
+`legacy_observed`, never a claim that a later command caused the current state.
+The native authorizer verifies the exact host `observationAdmission` proof,
+including the sole execution revision advance caused by its own typed admission.
+A known no-effect receipt can retain only its explicitly proved revision advance;
+any intervening unrelated execution still revokes the watch.

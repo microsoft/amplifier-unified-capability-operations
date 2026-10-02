@@ -1,6 +1,5 @@
 {
   "date": "2026-10-02",
-  "sourceRevision": "see containing commit: independent questions and observations",
   "relocatedCheckout": true,
   "environment": {
     "os": "macOS arm64",
@@ -8,7 +7,7 @@
     "python": "3.13.11"
   },
   "tests": {
-    "pythonPassed": 29,
+    "pythonPassed": 36,
     "nodePassed": 3
   },
   "limits": [
@@ -19,5 +18,6 @@
     "Saved question authority through actual bidirectional Python stdio",
     "Owner shutdown records uncertain delivery before closing SQL; restart and duplicates never replay",
     "25k-record indexed cold catalog and complete UTF-8 byte-bounded pages"
-  ]
+  ],
+  "sourceIdentity": "Git commit containing this receipt"
 }
