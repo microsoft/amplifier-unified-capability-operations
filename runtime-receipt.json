@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-02",
+  "source": "828d2bff97a77fbdbd0f06429369f7ff1f4abf42",
+  "tests": {
+    "scheduling": 6,
+    "operationLibrary": 6,
+    "ownerPython": 9,
+    "ownerNodeProtocol": 1
+  },
+  "acceptance": "isolated fixture, no paid model/account/live deployment",
+  "libraries": {
+    "repos/amplifier-scheduling": {
+      "python": "Python 3.13.11",
+      "commit": "a75c9cbc43844e53f8737912b8f5d46778032c53"
+    },
+    "repos/amplifier-operations": {
+      "python": "Python 3.13.11",
+      "commit": "51fdedb32c53c2e0b6fc8181f3f254c1be201b50"
+    },
+    "worktrees/ahp-acp-integration-20261002/components/operations-capabilities/python": {
+      "python": "Python 3.13.11"
+    }
+  },
+  "artifacts": {
+    "repos/amplifier-scheduling/dist/amplifier_scheduling-0.1.0-py3-none-any.whl": "2efa53ebb20e2608c8e7c0636ec15b8648eb3d5bb92f9fcef34c508bb6155459",
+    "repos/amplifier-operations/dist/amplifier_operations-0.1.0-py3-none-any.whl": "a5c84ec1fe065e3ef7d660c4cd533a6f1e0165c9744dcdccc517ecea1d9942e4",
+    "worktrees/ahp-acp-integration-20261002/components/operations-capabilities/python/dist/amplifier_unified_operations-0.1.0-py3-none-any.whl": "5d25b82080ea04b00432dceff59372b89ec8ab1226525343a86e41b62fc305bc"
+  }
+}
