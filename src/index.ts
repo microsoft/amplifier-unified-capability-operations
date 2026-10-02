@@ -12,15 +12,18 @@ export interface Options {
  nativeControlExisting:(uri:string,operation:string,args:Json)=>Promise<Json>;
  createSession:(input:Json)=>Promise<Json>;
  submitScheduled:(uri:string,input:Json)=>Promise<Json>;
- waitForTurn:(uri:string,commandId:string)=>Promise<Json>;
+ waitForTurn:(uri:string,commandId:string,waitMs?:number)=>Promise<Json>;
  submitQuestionAnswer?:(uri:string,input:Json)=>Promise<Json>;
+ submitObservation?:(uri:string,input:Json)=>Promise<Json>;
+ readTaskState?:(uri:string)=>Promise<Json>;
+ qualifiedObservation?:(uri:string,operation:'qualify'|'check'|'read',args:Json)=>Promise<Json>;
  questionDependency?:(uri:string,id:string)=>Promise<Json>;
  operationSources?:(uri:string,options:{id?:string;limit:number;cursor?:[number,string]})=>Promise<Json[]>;
  notifySchedule?:(uri:string,run:Json)=>Promise<void>;
  onInvalidate?:(topic:string,scope:string)=>void;
 }
-const METHODS=new Set(['inspectSession','nativeControl','nativeControlExisting','readUserMessage','createSession','submitScheduled','waitForTurn','submitQuestionAnswer','questionDependency','operationSources','notifySchedule']);
-const names={schedules:['list','read','preview','create','update','pause','resume','cancel','report','reconcile'].map(n=>'schedule.'+n),operations:['list','status','read','wait','submit','write','request','cancel'].map(n=>'operations.'+n),questions:['create','list','read','answer','cancel','supersede'].map(n=>'question.'+n)};
+const METHODS=new Set(['inspectSession','nativeControl','nativeControlExisting','readUserMessage','createSession','submitScheduled','waitForTurn','submitQuestionAnswer','submitObservation','readTaskState','qualifiedObservation','questionDependency','operationSources','notifySchedule']);
+const names={schedules:['list','read','preview','create','update','pause','resume','cancel','report','reconcile'].map(n=>'schedule.'+n),operations:['list','status','read','wait','submit','write','request','cancel'].map(n=>'operations.'+n),questions:['create','list','read','answer','cancel','supersede'].map(n=>'question.'+n),observations:['qualify','observers','preview','create','request','list','read','report','pause','cancel','resume'].map(n=>'observation.'+n)};
 const sessionOf=(context:Context)=>typeof context.session==='string'?context.session:context.session?.uri;
 /** Two-way owner channel. Calls are never retried after lost transport. */
 export class OwnerConnection {
@@ -53,9 +56,9 @@ export class OwnerConnection {
  async close(){if(!this.process){this.closed=true;return;}this.process.stdin.end();await new Promise<void>(resolve=>{const timer=setTimeout(()=>{this.process?.kill();resolve();},4000);this.process!.once('exit',()=>{clearTimeout(timer);resolve();});});this.fail('Owner closed');}
 }
 export class OperationsCapabilities {
- readonly manifest={version:1,topics:Object.fromEntries(Object.keys(names).map(topic=>[topic,{uri:`amplifier-capability://operations/${topic}`,version:1,watch:true}])),actions:Object.fromEntries(Object.entries(names).flatMap(([topic,values])=>values.map(operation=>[operation,{topic,operation,method:'x-amplifier/capabilityAction'}])))};
+ readonly manifest:{version:number;topics:Record<string,Json>;actions:Record<string,Json>};
  private owner:OwnerConnection;private revision=0;
- constructor(private options:Options){this.owner=new OwnerConnection(options.owner,(m,p)=>this.callback(m,p),(scope,topic)=>{for(const selected of topic&&topic in names?[topic]:Object.keys(names))options.onInvalidate?.(selected,scope);});}
+ constructor(private options:Options){const topics=Object.keys(names).filter(topic=>topic!=='observations'||options.qualifiedObservation&&options.readTaskState&&options.submitObservation);this.manifest={version:1,topics:Object.fromEntries(topics.map(topic=>[topic,{uri:`amplifier-capability://operations/${topic}`,version:1,watch:true}])),actions:Object.fromEntries(topics.flatMap(topic=>names[topic as keyof typeof names].map(operation=>[operation,{topic,operation,method:'x-amplifier/capabilityAction'}])))};this.owner=new OwnerConnection(options.owner,(m,p)=>this.callback(m,p),(scope,topic)=>{for(const selected of topic&&topic in this.manifest.topics?[topic]:topics)options.onInvalidate?.(selected,scope);});}
  private async callback(method:string,args:Json):Promise<any>{
   const sid=args.session as string;
   switch(method){
@@ -64,8 +67,11 @@ export class OperationsCapabilities {
    case 'nativeControlExisting':return this.options.nativeControlExisting(sid,args.operation,args.args);
    case 'createSession':return this.options.createSession(args);
    case 'submitScheduled':return this.options.submitScheduled(sid,args.input);
-   case 'waitForTurn':return this.options.waitForTurn(sid,args.commandId);
+   case 'waitForTurn':return this.options.waitForTurn(sid,args.commandId,args.waitMs);
    case 'submitQuestionAnswer':return this.options.submitQuestionAnswer?.(sid,args.input)??{accepted:false,executed:false,reason:'Question delivery is unavailable; the answer remains saved'};
+   case 'submitObservation':if(!this.options.submitObservation)throw Error('Observation admission is unavailable');return this.options.submitObservation(sid,args.input);
+   case 'readTaskState':if(!this.options.readTaskState)throw Error('Passive task authority is unavailable');return this.options.readTaskState(sid);
+   case 'qualifiedObservation':if(!this.options.qualifiedObservation)throw Error('Qualified observation reader is unavailable');return this.options.qualifiedObservation(sid,args.operation,args.args);
    case 'readUserMessage':{
     if(typeof args.id!=='string'||!args.id)return null;
     const value=this.options.readUserMessage?await this.options.readUserMessage(sid,args.id):(await this.options.readSessionContext(sid,200)).messages.find(r=>r.id===args.id)??null;
@@ -80,13 +86,13 @@ export class OperationsCapabilities {
  private async authorize(scope:string,context:Context){if(!scope?.startsWith('ahp-session:/'))throw Error('Selected session scope required');if(context.session&&sessionOf(context)!==scope)throw Error('Session scope mismatch');await this.options.inspectSession(scope,{clientId:context.clientId});}
  private record(topic:string,scope:string,data:Json){if(Buffer.byteLength(JSON.stringify(data))>768*1024)throw Error('Requested operation page exceeds768KiB; use narrower action page');return {topic,scope,revision:++this.revision,data};}
  /** Start only the indexed due scheduler, with no native runtimes on idle boot. */
- start=async()=>this.owner.request('start',{});
- actionSchemas=async()=>this.owner.request('actions',{});
+ start=async()=>this.owner.request('start',{observations:!!this.manifest.topics.observations});
+ actionSchemas=async()=>Object.fromEntries(Object.entries(await this.owner.request('actions',{})).filter(([name])=>name in this.manifest.actions));
  read=async(request:{uri:string;topic:string;scope:string;clientId:string})=>{if(!(request.topic in names))throw Error('Unknown operation topic');await this.authorize(request.scope,{clientId:request.clientId});return this.record(request.topic,request.scope,await this.owner.request('snapshot',{session:request.scope,topic:request.topic}));};
  action=async(request:Json,context:Context)=>{
   const scope=request.channel,advertised=this.manifest.actions[request.operation];if(request.version!==1||!advertised||advertised.topic!==request.topic)throw Error('Unadvertised operation action');await this.authorize(scope,context);
   const result=await this.owner.request('action',{session:scope,operation:request.operation,args:request.args??{},origin:context.origin??'ui',clientId:context.clientId,commandId:request.commandId});
-  const read=/\.(list|read|wait|status|request|preview)$/.test(request.operation);
+  const read=/\.(list|read|wait|status|request|preview|report|observers)$/.test(request.operation);
   return {accepted:true,result,updates:read?[]:[this.record(request.topic,scope,await this.owner.request('snapshot',{session:scope,topic:request.topic}))],invalidate:[],_meta:{'amplifier.dev/operation':{id:request.commandId}}};
  };
  /** Only authenticated native host bridge may supply runtime identity/producer event. */
@@ -94,6 +100,7 @@ export class OperationsCapabilities {
  interrupted=async(session:string)=>this.owner.request('interrupted',{session});
  questionDependency=async(session:string,id:string)=>{await this.options.inspectSession(session);return this.owner.request('questionDependency',{session,id});};
  authorizeQuestionDelivery=async(session:string,args:Json)=>{await this.options.inspectSession(session);return this.owner.request('questionDelivery',{session,args});};
+ authorizeObservation=async(session:string,args:Json)=>{await this.options.inspectSession(session);return this.owner.request('observationAdmission',{session,args});};
  close=async()=>this.owner.close();
 }
 export function createOperationsCapabilities(options:Options){return new OperationsCapabilities(options);}

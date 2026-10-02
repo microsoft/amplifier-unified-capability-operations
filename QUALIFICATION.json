@@ -1,6 +1,6 @@
 {
   "date": "2026-10-02",
-  "sourceRevision": "9bb0fbc593d8a0530c948db051993535fa0f7aee",
+  "sourceRevision": "see containing commit: independent questions and observations",
   "relocatedCheckout": true,
   "environment": {
     "os": "macOS arm64",
@@ -8,8 +8,8 @@
     "python": "3.13.11"
   },
   "tests": {
-    "nodePassed": 2,
-    "pythonPassed": 16
+    "pythonPassed": 29,
+    "nodePassed": 3
   },
   "limits": [
     "Offline component fixtures and explicitly owned consumers; no production host or real-account adoption.",

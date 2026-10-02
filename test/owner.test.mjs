@@ -47,3 +47,22 @@ test('saved question answer proves authority through reentrant stdio and preserv
   assert.equal((await invoke('question.answer',pendingArgs,'uncertain-answer')).result.delivery.status,'unknown');assert.equal(deliveryCount,2,'Restart and duplicate must never resend');
  }finally{await provider?.close();await rm(directory,{recursive:true,force:true});}
 });
+
+test('qualified observation owner uses passive authority and exact typed handoff through real stdio',{timeout:15000},async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'unified-observation-')),config=join(directory,'config.json');await writeFile(config,JSON.stringify({dataDir:join(directory,'owner')}));
+ let provider,submissions=0,passive=0;
+ provider=createOperationsCapabilities({owner:{command:resolve('python/.venv/bin/python'),args:['-m','amplifier_unified_operations.server','--config',config]},inspectSession:async()=>({uri:sid,status:'idle',nativeSessionId:'native',executionRevision:0,interruptionRevision:0,configurationHash:'config'}),readTaskState:async()=>{passive++;return {available:true,revision:'r1',task:{id:'task',revision:1,status:'active',questionIds:[]}}},
+  readSessionContext:async()=>({messages:[]}),nativeControl:async()=>{throw Error('Must not activate cold runtimes');},nativeControlExisting:async()=>({task:{id:'task'}}),createSession:async()=>{throw Error('No new sessions');},submitScheduled:async()=>{throw Error('No scheduled prompt fallback');},waitForTurn:async()=>({status:'completed',workContinues:false}),
+  qualifiedObservation:async(_session,operation)=>operation==='qualify'?{id:'observer',requestArgument:'observation'}:operation==='check'?{eligible:true}:{status:'actionable',summary:'Exact fixture result',evidence:[]},
+  submitObservation:async(session,input)=>{submissions++;const args=Object.fromEntries(Object.entries(input).filter(([key])=>!key.startsWith('expected')&&key!=='commandId'));args.inputId=input.commandId;assert.equal((await provider.authorizeObservation(session,args)).admitted,true);return {accepted:true,turnId:input.commandId}}});
+ const action=async(operation,args={})=>(await provider.action({version:1,channel:sid,topic:'observations',operation,args,commandId:crypto.randomUUID()},{clientId:'watch-browser',session:sid,origin:'ui'})).result;
+ try{
+  assert.ok((await provider.actionSchemas())['observation.preview']);await provider.start();
+  await action('observation.qualify',{descriptor:{}});const args={observerId:'observer',target:{},scope:{},sourceId:'fixture://source',args:{},intervalSeconds:15,durationSeconds:60,readTimeoutSeconds:3};const preview=await action('observation.preview',args);
+  const watch=(await action('observation.create',{...args,previewHash:preview.previewHash,requestId:'one-watch'})).watch;
+  let report;const until=Date.now()+12000;
+  do{report=await action('observation.read',{id:watch.id});if(report.handoffs[0]?.phase==='completed')break;await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<until);
+  assert.equal(report.handoffs[0]?.phase,'completed');assert.equal(submissions,1);assert.ok(passive>0);
+  assert.equal((await action('observation.request',{requestId:'one-watch'})).watch.id,watch.id);
+ }finally{await provider.close();await rm(directory,{recursive:true,force:true});}
+});

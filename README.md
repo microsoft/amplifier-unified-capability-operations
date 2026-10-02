@@ -99,3 +99,35 @@ may bypass it. Busy admission may retain a rejected answer; an uncertain
 acknowledgement or restart never resends one. Host acceptance is not execution
 completion. Legacy question import and delivery into an active turn remain
 separate integration work.
+
+## Quiet watches
+
+Observations are advertised only when the composer supplies `readTaskState`,
+`qualifiedObservation`, and `submitObservation`. The first is a passive ACP storage
+read; the second belongs to the installed MCP broker; the third is a typed host
+admission. Generic prompts or native control are never substitutes.
+
+The `observations` topic contains five selected-session watches plus a cursor.
+`observation.list`, `observers`, `read`, and `report` page at most 50 complete records
+and 512 KiB. Due work uses indexed queries, four concurrent jobs, bounded source
+reads, and short receipt polls. Watch metadata also appears in `operations.list`;
+its terminal state describes source observation, not model or product completion.
+Control a watch through its owning actions, not generic process cancellation.
+
+Pending results are quiet. Task, interruption, execution, human-request, question,
+source, and account authority are checked again after each read and before a typed
+handoff. A terminal result is committed before delivery. Cold runtimes leave the
+result saved. Only an explicit host `executed:false` / `retryEligibility:waiting_worker`
+receipt can make an already reserved input eligible again, with the same input ID.
+Unknown admissions never replay. Restart abandons interrupted reads and preserves
+uncertain deliveries. Expiration does not imply underlying work cancellation.
+
+Agent-created watches must cite an actual host-admitted human request; imported or
+generated messages cannot grant authority. Operator source qualification is a
+separate explicit action. Automatic presentation currently refuses requests until
+an actual client grant is connected. Legacy watch databases are not yet imported.
+
+Qualification: 29 Python cases and three real stdio owner tests pass, including
+25,000 cold records, typed reentrant admission, task/stop/source/cancel/expiry races,
+known cold refusal, and uncertain-restart recovery. Actual MCP SDK and native
+runtime paths have separate owner checks; the composed graph has its own acceptance.

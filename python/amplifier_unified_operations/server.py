@@ -9,7 +9,8 @@ from jsonschema import Draft202012Validator
 from .scheduler import Scheduler
 from .operations import Operations
 from .questions import Questions
-from . import schedules_schemas,operations_schemas,questions_schemas
+from .observations import Observations
+from . import schedules_schemas,operations_schemas,questions_schemas,observations_schemas
 
 MAX_FRAME=4_000_000
 
@@ -17,13 +18,15 @@ def schema(fields,required=None):return {'type':'object','properties':fields,'re
 def string(maximum):return {'type':'string','maxLength':maximum}
 
 def definitions():
-    values={**schedules_schemas.definitions(schema,string),**operations_schemas.definitions(schema,string),**questions_schemas.definitions(schema,string)}
+    values={**schedules_schemas.definitions(schema,string),**operations_schemas.definitions(schema,string),**questions_schemas.definitions(schema,string),**observations_schemas.definitions(schema,string)}
     for name in ('schedule.list','schedule.read'):
         values[name][1]['properties'].update(limit={'type':'integer','minimum':1,'maximum':100},cursor={'type':['number','null'],'minimum':0})
     for _,definition in values.values():definition['properties']['sessionId']['maxLength']=8192
     values['operations.list'][1]['properties']['cursor']={'type':'string','maxLength':1024}
     values['question.list'][1]['properties']['cursor']={'type':'string','maxLength':1024}
     values['question.list'][1]['properties']['offset']['maximum']=1000
+    for name in ('observation.list','observation.observers','observation.read','observation.report'):
+        values[name][1]['properties'].update(limit={'type':'integer','minimum':1,'maximum':50},cursor={'type':'string','maxLength':1024})
     return {name:{'description':row[0],'schema':row[1]} for name,row in values.items()}
 
 class Owner:
@@ -34,8 +37,14 @@ class Owner:
         self.questions=Questions(root/'questions.sqlite3',host,lambda sid:self.changed(sid,'questions'))
         self.schedules=Scheduler(root/'schedules.sqlite3',self.callback,lambda sid:self.changed(sid,'schedules'))
         self.operations=Operations(root/'operations.sqlite3',self.callback,lambda sid:self.changed(sid,'operations'))
+        self.observations=Observations(root/'observations.sqlite3',self.callback,lambda sid:self.changed(sid,'observations'));self.observations_enabled=False
     async def callback(self,method,args):
         if method=='questionDependency':return self.questions.dependency(args['session'],args['id'])
+        if method=='operationSources':
+            own=self.observations.store.operations(args['session'],args.get('id'),args.get('limit',50),args.get('cursor')) if self.observations_enabled else []
+            external=await self.host(method,args)
+            if not isinstance(external,list) or len(external)>100:raise ValueError('Invalid external operation page')
+            return sorted(own+external,key=lambda row:(row.get('createdAt') or 0,row['id']),reverse=True)[:args.get('limit',50)]
         return await self.host(method,args)
     async def changed(self,sid,topic):
         # This map is presentation-only and capped; authoritative revision stays on disk.
@@ -49,15 +58,17 @@ class Owner:
             try:await self.schedules.tick()
             except asyncio.CancelledError:raise
             except Exception as exc:self.schedules.error=type(exc).__name__
+            if self.observations_enabled:await self.observations.tick()
             await asyncio.sleep(2)
     async def request(self,method,params):
         if method=='initialize':return {'protocolVersion':1,'scheduledAdmission':'host','actions':list(self.schemas)}
         if method=='actions':return self.schemas
-        if method=='start':self.start();return {'started':True}
+        if method=='start':self.observations_enabled=params.get('observations') is True;self.start();return {'started':True}
         if method=='observe':return await self.operations.observe(params['session'],params['nativeSessionId'],params['event'])
         if method=='interrupted':await self.operations.interrupted(params['session']);return {}
         if method=='questionDependency':return self.questions.dependency(params['session'],params['id'])
         if method=='questionDelivery':return self.questions.authorize_delivery(params['session'],params['args'])
+        if method=='observationAdmission':return await self.observations.authorize(params['session'],params['args'])
         if method=='tick':await self.schedules.tick();return {}
         if method=='snapshot':
             sid=params['session'];topic=params['topic']
@@ -66,6 +77,8 @@ class Owner:
             if topic=='operations':return {'operations':{sid:await self.operations.dispatch('operations.list',{'sessionId':sid,'limit':25},'ui')}}
             if topic=='questions':
                 page=self.questions.page(sid,{'limit':5});return {'questions':{sid:page['items']},'questionPage':{'nextCursor':page['nextCursor']}}
+            if topic=='observations':
+                page=self.observations.store.page('watch',sid,limit=5);return {'observations':{sid:page['items']},'observationPage':{'nextCursor':page['nextCursor']}}
             raise ValueError('Unknown topic')
         if method=='action':
             name=params['operation'];definition=self.schemas.get(name)
@@ -81,12 +94,14 @@ class Owner:
                 return await self.schedules.dispatch(name,args,origin,command)
             if name.startswith('question.'):
                 return await self.questions.dispatch(name,args,origin,params.get('clientId'),params.get('commandId'))
+            if name.startswith('observation.'):
+                return await self.observations.dispatch(name,args,origin,params.get('clientId'),params.get('commandId'))
             return await self.operations.dispatch(name,args,origin)
         raise ValueError('Unknown owner method')
     async def close(self):
         self.closed=True
         if self.tick_task:self.tick_task.cancel();await asyncio.gather(self.tick_task,return_exceptions=True)
-        await self.schedules.close();await self.operations.close();self.questions.close();self.lease.release()
+        await self.observations.close();await self.schedules.close();await self.operations.close();self.questions.close();self.lease.release()
 
 class Peer:
     def __init__(self,config):self.pending={};self.counter=0;self.tasks=set();self.closing=False;self.owner=Owner(config,self.host,self.notify)
