@@ -8,7 +8,8 @@ from filelock import FileLock
 from jsonschema import Draft202012Validator
 from .scheduler import Scheduler
 from .operations import Operations
-from . import schedules_schemas,operations_schemas
+from .questions import Questions
+from . import schedules_schemas,operations_schemas,questions_schemas
 
 MAX_FRAME=4_000_000
 
@@ -16,11 +17,13 @@ def schema(fields,required=None):return {'type':'object','properties':fields,'re
 def string(maximum):return {'type':'string','maxLength':maximum}
 
 def definitions():
-    values={**schedules_schemas.definitions(schema,string),**operations_schemas.definitions(schema,string)}
+    values={**schedules_schemas.definitions(schema,string),**operations_schemas.definitions(schema,string),**questions_schemas.definitions(schema,string)}
     for name in ('schedule.list','schedule.read'):
         values[name][1]['properties'].update(limit={'type':'integer','minimum':1,'maximum':100},cursor={'type':['number','null'],'minimum':0})
     for _,definition in values.values():definition['properties']['sessionId']['maxLength']=8192
     values['operations.list'][1]['properties']['cursor']={'type':'string','maxLength':1024}
+    values['question.list'][1]['properties']['cursor']={'type':'string','maxLength':1024}
+    values['question.list'][1]['properties']['offset']['maximum']=1000
     return {name:{'description':row[0],'schema':row[1]} for name,row in values.items()}
 
 class Owner:
@@ -28,13 +31,17 @@ class Owner:
         root=Path(config['dataDir']).expanduser().resolve();root.mkdir(parents=True,exist_ok=True,mode=0o700)
         self.lease=FileLock(str(root/'owner.lock'));self.lease.acquire(timeout=0)
         self.host=host;self.notify=notify;self.schemas=definitions();self.revisions={};self.tick_task=None;self.closed=False
-        self.schedules=Scheduler(root/'schedules.sqlite3',host,self.changed)
-        self.operations=Operations(root/'operations.sqlite3',host,self.changed)
-    async def changed(self,sid):
+        self.questions=Questions(root/'questions.sqlite3',host,lambda sid:self.changed(sid,'questions'))
+        self.schedules=Scheduler(root/'schedules.sqlite3',self.callback,lambda sid:self.changed(sid,'schedules'))
+        self.operations=Operations(root/'operations.sqlite3',self.callback,lambda sid:self.changed(sid,'operations'))
+    async def callback(self,method,args):
+        if method=='questionDependency':return self.questions.dependency(args['session'],args['id'])
+        return await self.host(method,args)
+    async def changed(self,sid,topic):
         # This map is presentation-only and capped; authoritative revision stays on disk.
         self.revisions.pop(sid,None);self.revisions[sid]=0
         while len(self.revisions)>128:self.revisions.pop(next(iter(self.revisions)))
-        await self.notify('owner/changed',{'session':sid})
+        await self.notify('owner/changed',{'session':sid,'topic':topic})
     def start(self):
         if self.tick_task is None:self.tick_task=asyncio.create_task(self.loop())
     async def loop(self):
@@ -49,12 +56,16 @@ class Owner:
         if method=='start':self.start();return {'started':True}
         if method=='observe':return await self.operations.observe(params['session'],params['nativeSessionId'],params['event'])
         if method=='interrupted':await self.operations.interrupted(params['session']);return {}
+        if method=='questionDependency':return self.questions.dependency(params['session'],params['id'])
+        if method=='questionDelivery':return self.questions.authorize_delivery(params['session'],params['args'])
         if method=='tick':await self.schedules.tick();return {}
         if method=='snapshot':
             sid=params['session'];topic=params['topic']
             if topic=='schedules':
                 page=self.schedules.list(sid,{'limit':25});return {'schedules':{sid:page['items']},'schedulePage':{'nextCursor':page['nextCursor']}}
             if topic=='operations':return {'operations':{sid:await self.operations.dispatch('operations.list',{'sessionId':sid,'limit':25},'ui')}}
+            if topic=='questions':
+                page=self.questions.page(sid,{'limit':5});return {'questions':{sid:page['items']},'questionPage':{'nextCursor':page['nextCursor']}}
             raise ValueError('Unknown topic')
         if method=='action':
             name=params['operation'];definition=self.schemas.get(name)
@@ -68,21 +79,24 @@ class Owner:
                 command=params.get('commandId')
                 if not isinstance(command,str) or not 1<=len(command)<=200:raise ValueError('Stable commandId required')
                 return await self.schedules.dispatch(name,args,origin,command)
+            if name.startswith('question.'):
+                return await self.questions.dispatch(name,args,origin,params.get('clientId'),params.get('commandId'))
             return await self.operations.dispatch(name,args,origin)
         raise ValueError('Unknown owner method')
     async def close(self):
         self.closed=True
         if self.tick_task:self.tick_task.cancel();await asyncio.gather(self.tick_task,return_exceptions=True)
-        await self.schedules.close();await self.operations.close();self.lease.release()
+        await self.schedules.close();await self.operations.close();self.questions.close();self.lease.release()
 
 class Peer:
-    def __init__(self,config):self.pending={};self.counter=0;self.tasks=set();self.owner=Owner(config,self.host,self.notify)
+    def __init__(self,config):self.pending={};self.counter=0;self.tasks=set();self.closing=False;self.owner=Owner(config,self.host,self.notify)
     async def write(self,row):
         text=json.dumps(row,ensure_ascii=False,allow_nan=False)+'\n'
         if len(text.encode())>MAX_FRAME:raise ValueError('Owner frame exceeds4MB; narrow the requested page')
         sys.stdout.write(text);sys.stdout.flush()
     async def notify(self,method,params):await self.write({'jsonrpc':'2.0','method':method,'params':params})
     async def host(self,method,params):
+        if self.closing:raise ValueError('Host connection closed; new work was not admitted')
         self.counter+=1;identity='host:'+str(self.counter);future=asyncio.get_running_loop().create_future();self.pending[identity]=future
         try:
             await self.write({'jsonrpc':'2.0','id':identity,'method':'host/'+method,'params':params});return await future
@@ -106,12 +120,16 @@ class Peer:
                 if len(self.tasks)>=128:raise ValueError('Owner request capacity reached')
                 task=asyncio.create_task(self.handle(row));self.tasks.add(task);task.add_done_callback(self.tasks.discard)
         finally:
+            self.closing=True
             transport.close()
             for future in self.pending.values():
                 if not future.done():future.set_exception(ValueError('Host connection lost; uncertain work is not replayed'))
+            # Keep durable stores open until in-flight handlers record uncertain
+            # deliveries. Cancellation must never race their final SQL writes.
+            tasks=list(self.tasks)
+            for task in tasks:task.cancel()
+            await asyncio.gather(*tasks,return_exceptions=True)
             await self.owner.close()
-            for task in self.tasks:task.cancel()
-            await asyncio.gather(*self.tasks,return_exceptions=True)
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--config',type=Path,required=True);args=parser.parse_args()

@@ -1,15 +1,14 @@
 # Amplifier Unified operations capability
 
-Independent product owner for durable schedules and process evidence. Python
+Independent product owner for durable questions, schedules and process evidence. Python
 uses `amplifier-scheduling` and `amplifier-operations` through their public package
 APIs. No AppService, native Python engine or host-private imports. MIT provenance:
 original `amplifier_web/{schedules,operations,operation_requests}.py` action and
 admission contracts at `828d2bff97a77fbdbd0f06429369f7ff1f4abf42`.
 
 Build with `uv sync --directory python`, `npm ci`, `npm test`. The development
-lock resolves the optional libraries from Foundation's candidate branch
-`unified/shared-application-libraries-20261002`, with explicit package subdirectories.
-Move that development reference to Foundation main after the library PR lands.
+lock resolves optional libraries from Foundation main with explicit package
+subdirectories; the receipt records the qualified revision without a standing pin.
 Distribution installs independent qualified wheels. No sibling source checkout
 is required. Run the private child owner as:
 `amplifier-unified-operations --config /owned/operations.json`, where the file
@@ -38,8 +37,7 @@ marks interrupted submissions unknown without replay.
 
 Optional callbacks: `readUserMessage(uri,id)` for bounded targeted authorization
 history; absent it uses the host's bounded selected context and refuses unseen
-older provenance. `questionDependency(uri,id)` must validate actual answers;
-absence blocks dependent work. `operationSources(uri,{id?,limit,cursor?})` reads
+older provenance. The built-in question owner validates dependencies against saved answers. `operationSources(uri,{id?,limit,cursor?})` reads
 external owners' bounded receipts without copying their authority. Each returned
 record must contain its scoped sessionId and namespaced id, state/revision and
 createdAt. `cursor` is `[createdAt,id]`, exclusive descending. Absent this callback
@@ -79,6 +77,25 @@ turning an agent's unchanged claim into proof or completing the overall task.
 Validation is isolated fixture acceptance, not live-model/account/deployment
 acceptance. Legacy registration/history import is a separate distribution job;
 existing native input/history authority remains unchanged. UI placement, actual
-notification delivery, questions/MCP/worker receipt composition, and old schedule
+notification delivery, MCP/worker receipt composition, and old schedule
 migration require their corresponding registered owners/integration. No missing
 callback is represented as a successful external action.
+
+Questions preserve six shared action names and a selected-session `questions`
+topic: `{questions:{[uri]:records},questionPage:{nextCursor}}`. The initial topic
+contains at most five complete records; `question.list` accepts status, limit<=50,
+and opaque scope-bound cursors, with a 512KiB complete-record page bound. Clients
+keep editing drafts locally and query pending questions explicitly. Answers use
+revision checks, an exact user/voice evidence reference for agents, and durable
+command identities. Saved answer and runtime delivery are separate states.
+
+Wire `submitQuestionAnswer(uri,input)` through public host admission and route
+`questions.delivery.admit` to `authorizeQuestionDelivery(uri,args)` using the
+authenticated session, never a supplied selector. Native dependency admission
+uses `questionDependency(uri,id)`. Advertise native feature `questions` only
+when these callbacks are wired. The native proof binds exact saved text, input
+identity, question revision and answer provenance. No generic native control
+may bypass it. Busy admission may retain a rejected answer; an uncertain
+acknowledgement or restart never resends one. Host acceptance is not execution
+completion. Legacy question import and delivery into an active turn remain
+separate integration work.

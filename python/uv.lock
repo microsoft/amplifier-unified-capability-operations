@@ -5,12 +5,12 @@ requires-python = ">=3.11"
 [[package]]
 name = "amplifier-operations"
 version = "0.1.0"
-source = { git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Foperations&branch=unified%2Fshared-application-libraries-20261002#5884a62d4299d91a6d51422baa2b858385be7347" }
+source = { git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Foperations&branch=main#eed03cf62dc932b49fdea7d21275f8d08b0cf03e" }
 
 [[package]]
 name = "amplifier-scheduling"
 version = "0.1.0"
-source = { git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Fscheduling&branch=unified%2Fshared-application-libraries-20261002#5884a62d4299d91a6d51422baa2b858385be7347" }
+source = { git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Fscheduling&branch=main#eed03cf62dc932b49fdea7d21275f8d08b0cf03e" }
 
 [[package]]
 name = "amplifier-unified-operations"
@@ -31,8 +31,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "amplifier-operations", git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Foperations&branch=unified%2Fshared-application-libraries-20261002" },
-    { name = "amplifier-scheduling", git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Fscheduling&branch=unified%2Fshared-application-libraries-20261002" },
+    { name = "amplifier-operations", git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Foperations&branch=main" },
+    { name = "amplifier-scheduling", git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Fscheduling&branch=main" },
     { name = "filelock", specifier = ">=3.20,<4" },
     { name = "jsonschema", specifier = ">=4.23,<5" },
 ]

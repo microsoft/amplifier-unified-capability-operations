@@ -13,18 +13,19 @@ export interface Options {
  createSession:(input:Json)=>Promise<Json>;
  submitScheduled:(uri:string,input:Json)=>Promise<Json>;
  waitForTurn:(uri:string,commandId:string)=>Promise<Json>;
+ submitQuestionAnswer?:(uri:string,input:Json)=>Promise<Json>;
  questionDependency?:(uri:string,id:string)=>Promise<Json>;
  operationSources?:(uri:string,options:{id?:string;limit:number;cursor?:[number,string]})=>Promise<Json[]>;
  notifySchedule?:(uri:string,run:Json)=>Promise<void>;
  onInvalidate?:(topic:string,scope:string)=>void;
 }
-const METHODS=new Set(['inspectSession','nativeControl','nativeControlExisting','readUserMessage','createSession','submitScheduled','waitForTurn','questionDependency','operationSources','notifySchedule']);
-const names={schedules:['list','read','preview','create','update','pause','resume','cancel','report','reconcile'].map(n=>'schedule.'+n),operations:['list','status','read','wait','submit','write','request','cancel'].map(n=>'operations.'+n)};
+const METHODS=new Set(['inspectSession','nativeControl','nativeControlExisting','readUserMessage','createSession','submitScheduled','waitForTurn','submitQuestionAnswer','questionDependency','operationSources','notifySchedule']);
+const names={schedules:['list','read','preview','create','update','pause','resume','cancel','report','reconcile'].map(n=>'schedule.'+n),operations:['list','status','read','wait','submit','write','request','cancel'].map(n=>'operations.'+n),questions:['create','list','read','answer','cancel','supersede'].map(n=>'question.'+n)};
 const sessionOf=(context:Context)=>typeof context.session==='string'?context.session:context.session?.uri;
 /** Two-way owner channel. Calls are never retried after lost transport. */
 export class OwnerConnection {
  private process?:ChildProcessWithoutNullStreams;private ready?:Promise<void>;private next=0;private closed=false;private pending=new Map<number,{resolve:(r:any)=>void;reject:(e:Error)=>void}>();
- constructor(private launcher:Launcher,private callback:(method:string,args:Json)=>Promise<any>,private changed:(scope:string)=>void){}
+ constructor(private launcher:Launcher,private callback:(method:string,args:Json)=>Promise<any>,private changed:(scope:string,topic?:string)=>void){}
  private fail(message:string){this.closed=true;for(const entry of this.pending.values())entry.reject(Error(message));this.pending.clear();}
  private write(row:Json){const data=JSON.stringify(row)+'\n';if(Buffer.byteLength(data)>4_000_000)throw Error('Owner frame exceeds4MB');if(this.closed||!this.process)throw Error('Owner unavailable; uncertain work was not replayed');this.process.stdin.write(data,error=>{if(error)this.fail('Owner transport failed; outcome unknown.');});}
  private start(){
@@ -39,7 +40,7 @@ export class OwnerConnection {
  }
  private async receive(line:string){
   let row:Json;try{row=JSON.parse(line);}catch{this.fail('Invalid owner response');this.process?.kill();return;}
-  if(row.method==='owner/changed'){this.changed(row.params.session);return;}
+  if(row.method==='owner/changed'){this.changed(row.params.session,row.params.topic);return;}
   if(row.method){
    const method=String(row.method).replace(/^host\//,'');
    try{if(!String(row.method).startsWith('host/')||!METHODS.has(method))throw Error('Unknown host callback');const result=await this.callback(method,row.params??{});this.write({jsonrpc:'2.0',id:row.id,result:result??null});}
@@ -54,7 +55,7 @@ export class OwnerConnection {
 export class OperationsCapabilities {
  readonly manifest={version:1,topics:Object.fromEntries(Object.keys(names).map(topic=>[topic,{uri:`amplifier-capability://operations/${topic}`,version:1,watch:true}])),actions:Object.fromEntries(Object.entries(names).flatMap(([topic,values])=>values.map(operation=>[operation,{topic,operation,method:'x-amplifier/capabilityAction'}])))};
  private owner:OwnerConnection;private revision=0;
- constructor(private options:Options){this.owner=new OwnerConnection(options.owner,(m,p)=>this.callback(m,p),scope=>{for(const topic of Object.keys(names))options.onInvalidate?.(topic,scope);});}
+ constructor(private options:Options){this.owner=new OwnerConnection(options.owner,(m,p)=>this.callback(m,p),(scope,topic)=>{for(const selected of topic&&topic in names?[topic]:Object.keys(names))options.onInvalidate?.(selected,scope);});}
  private async callback(method:string,args:Json):Promise<any>{
   const sid=args.session as string;
   switch(method){
@@ -64,6 +65,7 @@ export class OperationsCapabilities {
    case 'createSession':return this.options.createSession(args);
    case 'submitScheduled':return this.options.submitScheduled(sid,args.input);
    case 'waitForTurn':return this.options.waitForTurn(sid,args.commandId);
+   case 'submitQuestionAnswer':return this.options.submitQuestionAnswer?.(sid,args.input)??{accepted:false,executed:false,reason:'Question delivery is unavailable; the answer remains saved'};
    case 'readUserMessage':{
     if(typeof args.id!=='string'||!args.id)return null;
     const value=this.options.readUserMessage?await this.options.readUserMessage(sid,args.id):(await this.options.readSessionContext(sid,200)).messages.find(r=>r.id===args.id)??null;
@@ -83,13 +85,15 @@ export class OperationsCapabilities {
  read=async(request:{uri:string;topic:string;scope:string;clientId:string})=>{if(!(request.topic in names))throw Error('Unknown operation topic');await this.authorize(request.scope,{clientId:request.clientId});return this.record(request.topic,request.scope,await this.owner.request('snapshot',{session:request.scope,topic:request.topic}));};
  action=async(request:Json,context:Context)=>{
   const scope=request.channel,advertised=this.manifest.actions[request.operation];if(request.version!==1||!advertised||advertised.topic!==request.topic)throw Error('Unadvertised operation action');await this.authorize(scope,context);
-  const result=await this.owner.request('action',{session:scope,operation:request.operation,args:request.args??{},origin:context.origin??'ui',commandId:request.commandId});
+  const result=await this.owner.request('action',{session:scope,operation:request.operation,args:request.args??{},origin:context.origin??'ui',clientId:context.clientId,commandId:request.commandId});
   const read=/\.(list|read|wait|status|request|preview)$/.test(request.operation);
   return {accepted:true,result,updates:read?[]:[this.record(request.topic,scope,await this.owner.request('snapshot',{session:scope,topic:request.topic}))],invalidate:[],_meta:{'amplifier.dev/operation':{id:request.commandId}}};
  };
  /** Only authenticated native host bridge may supply runtime identity/producer event. */
  observe=async(session:string,nativeSessionId:string,event:Json)=>{await this.options.inspectSession(session);return this.owner.request('observe',{session,nativeSessionId,event});};
  interrupted=async(session:string)=>this.owner.request('interrupted',{session});
+ questionDependency=async(session:string,id:string)=>{await this.options.inspectSession(session);return this.owner.request('questionDependency',{session,id});};
+ authorizeQuestionDelivery=async(session:string,args:Json)=>{await this.options.inspectSession(session);return this.owner.request('questionDelivery',{session,args});};
  close=async()=>this.owner.close();
 }
 export function createOperationsCapabilities(options:Options){return new OperationsCapabilities(options);}

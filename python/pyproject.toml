@@ -13,8 +13,8 @@ amplifier-unified-operations="amplifier_unified_operations.server:main"
 [tool.hatch.build.targets.wheel]
 packages=["amplifier_unified_operations"]
 [tool.uv.sources]
-amplifier-scheduling={git="https://github.com/microsoft/amplifier-foundation",branch="unified/shared-application-libraries-20261002",subdirectory="libraries/scheduling"}
-amplifier-operations={git="https://github.com/microsoft/amplifier-foundation",branch="unified/shared-application-libraries-20261002",subdirectory="libraries/operations"}
+amplifier-scheduling={git="https://github.com/microsoft/amplifier-foundation",branch="main",subdirectory="libraries/scheduling"}
+amplifier-operations={git="https://github.com/microsoft/amplifier-foundation",branch="main",subdirectory="libraries/operations"}
 [dependency-groups]
 dev=["pytest>=8","pytest-asyncio>=0.25"]
 [tool.pytest.ini_options]

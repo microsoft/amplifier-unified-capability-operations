@@ -8,11 +8,16 @@
     "python": "3.13.11"
   },
   "tests": {
-    "nodePassed": 1,
-    "pythonPassed": 9
+    "nodePassed": 2,
+    "pythonPassed": 16
   },
   "limits": [
     "Offline component fixtures and explicitly owned consumers; no production host or real-account adoption.",
     "Linux Node22/24 CI configured; hosted outcomes are independent."
+  ],
+  "additionalAcceptance": [
+    "Saved question authority through actual bidirectional Python stdio",
+    "Owner shutdown records uncertain delivery before closing SQL; restart and duplicates never replay",
+    "25k-record indexed cold catalog and complete UTF-8 byte-bounded pages"
   ]
 }

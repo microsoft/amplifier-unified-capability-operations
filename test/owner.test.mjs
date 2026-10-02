@@ -26,3 +26,24 @@ test('real Python owner protocol: scoped schedule review, process receipts and b
   await provider.interrupted(sid);assert.equal((await invoke('operations.status',{id:'p1'})).result.state,'outcome_unknown');assert.ok(invalidations.length);
  }finally{await provider.close();await rm(directory,{recursive:true,force:true});}
 });
+
+test('saved question answer proves authority through reentrant stdio and preserves a lost delivery without replay',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'unified-questions-')),config=join(directory,'config.json');await writeFile(config,JSON.stringify({dataDir:join(directory,'owner')}));
+ let provider,deliveryCount=0,enteredResolve;const entered=new Promise(resolve=>{enteredResolve=resolve;});
+ const make=(hanging=false)=>createOperationsCapabilities({owner:{command:resolve('python/.venv/bin/python'),args:['-m','amplifier_unified_operations.server','--config',config]},inspectSession:async()=>({uri:sid,status:'idle'}),
+  readSessionContext:async()=>({messages:[]}),nativeControl:async()=>{throw Error('No generic native control');},nativeControlExisting:async()=>{throw Error('No native process');},createSession:async()=>{throw Error('Unused');},submitScheduled:async()=>{throw Error('Unused');},waitForTurn:async()=>{throw Error('Not completion');},
+  submitQuestionAnswer:async(session,input)=>{deliveryCount++;const proof=await provider.authorizeQuestionDelivery(session,{...input,inputId:input.commandId});assert.equal(proof.admitted,true);if(hanging){enteredResolve();return new Promise(()=>{});}return {accepted:true};}});
+ const invoke=(operation,args={},commandId=operation)=>provider.action({version:1,channel:sid,topic:'questions',operation,args,commandId},{clientId:'question-browser',session:sid,origin:'ui'});
+ try{
+  provider=make();const question=(await invoke('question.create',{prompt:'Which color?',required:true,dependency:'Paint selection'},'create-accepted')).result;
+  const args={id:question.id,expectedRevision:1,text:'Blue'};const answer=(await invoke('question.answer',args,'accepted-answer')).result;
+  assert.equal(answer.delivery.status,'accepted');assert.equal((await provider.questionDependency(sid,question.id)).text,'Blue');
+  assert.equal((await invoke('question.answer',args,'accepted-answer')).result.delivery.status,'accepted');assert.equal(deliveryCount,1);
+  await provider.close();provider=make(true);
+  const pending=(await invoke('question.create',{prompt:'Which finish?',required:true,dependency:'Finish selection'},'create-pending')).result;
+  const pendingArgs={id:pending.id,expectedRevision:1,text:'Matte'};
+  const inFlight=invoke('question.answer',pendingArgs,'uncertain-answer');const rejected=assert.rejects(inFlight,/closed|exited/i);await entered;await provider.close();await rejected;
+  provider=make();const saved=(await invoke('question.read',{id:pending.id})).result;assert.equal(saved.status,'answered');assert.equal(saved.delivery.status,'unknown');
+  assert.equal((await invoke('question.answer',pendingArgs,'uncertain-answer')).result.delivery.status,'unknown');assert.equal(deliveryCount,2,'Restart and duplicate must never resend');
+ }finally{await provider?.close();await rm(directory,{recursive:true,force:true});}
+});
