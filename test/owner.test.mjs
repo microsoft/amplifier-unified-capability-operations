@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-import {createOperationsCapabilities} from '../dist/index.js';
+const {createOperationsCapabilities}=await import(process.env.OPERATIONS_NATIVE_NODE_MODULE??'../dist/index.js');
 const sid='ahp-session:/fixture';
 test('real Python owner protocol: scoped schedule review, process receipts and bounded reads',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'unified-operations-'));const config=join(directory,'config.json');await writeFile(config,JSON.stringify({dataDir:join(directory,'owner')}));

@@ -21,6 +21,21 @@ jobs:
         with:
           python-version: '3.13'
       - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a
-      - run: uv sync --directory python --python 3.13
+      - name: Install dependencies with scoped private-repository access
+        env:
+          # Repository-scoped checkout credentials cannot read this private peer.
+          # Configure a read-only secret; never place credentials in source URLs.
+          AMPLIFIER_DEPENDENCY_READ_TOKEN: ${{ secrets.AMPLIFIER_DEPENDENCY_READ_TOKEN }}
+          GIT_CONFIG_COUNT: '2'
+          GIT_CONFIG_KEY_0: credential.https://github.com/microsoft/amplifier-portability.helper
+          GIT_CONFIG_VALUE_0: '!f() { if [ "$1" = get ]; then printf "%s\n" "username=x-access-token" "password=$AMPLIFIER_DEPENDENCY_READ_TOKEN"; fi; }; f'
+          GIT_CONFIG_KEY_1: credential.useHttpPath
+          GIT_CONFIG_VALUE_1: 'true'
+        run: |
+          if [ -z "$AMPLIFIER_DEPENDENCY_READ_TOKEN" ]; then
+            echo "::error::Configure AMPLIFIER_DEPENDENCY_READ_TOKEN with read access to microsoft/amplifier-portability; dependency installation cannot proceed without it."
+            exit 1
+          fi
+          uv sync --directory python --python 3.13 --locked
       - run: python/.venv/bin/python -m pytest -c python/pyproject.toml python/tests -q
       - run: npm test

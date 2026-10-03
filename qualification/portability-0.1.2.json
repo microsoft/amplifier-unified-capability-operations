@@ -1,0 +1,81 @@
+{
+  "date": "2026-10-03",
+  "repository": "microsoft/amplifier-unified-capability-operations",
+  "packageVersion": "0.1.0",
+  "change": "Replace incompatible exact amplifier-portability==0.1.0 metadata with >=0.1.2,<0.2; refresh branch-main development lock to merged 0.1.2. No runtime or execution-authority change.",
+  "requiresDist": [
+    "amplifier-operations==0.1.0",
+    "amplifier-portability<0.2,>=0.1.2",
+    "amplifier-scheduling==0.1.0",
+    "amplifier-worktrees==0.1.0",
+    "filelock<4,>=3.20",
+    "jsonschema<5,>=4.23"
+  ],
+  "developmentLock": {
+    "portability": "e2e0c529ea439e76cdbb3411b6b166001594dd52",
+    "foundation": "8462030de39e2f86beda8b7758925520683e3678"
+  },
+  "artifacts": {
+    "operations": {
+      "name": "amplifier_unified_operations-0.1.0-py3-none-any.whl",
+      "sha256": "2f45999f07ba515b9013192a3b0052a5a055f0caec012c201d411f72bffc12ac",
+      "bytes": 43214
+    },
+    "portabilityLibrary": {
+      "name": "amplifier_portability-0.1.2-py3-none-any.whl",
+      "sha256": "02348bebcc9fa9729eb6da68f69649b69089d174f8303ec2b90a27f380cfe760",
+      "bytes": 24594
+    },
+    "portabilityAdapter": {
+      "name": "amplifier_unified_portability-0.1.0-py3-none-any.whl",
+      "sha256": "ede4482b12b1c25309890a99e254ef0dd5588fa5db45b339c1833f45e459d064",
+      "bytes": 19721
+    }
+  },
+  "qualifiedLibrarySource": "2e6f283ddbca4c4567e6353b618bb7abef050f84",
+  "byteVerification": {
+    "ownerPythonSourceWheelInstalledAndOriginalWheel": 17,
+    "ownerRuntimeDelta": 0,
+    "portabilityEvidenceModuleIdenticalToOriginal": true,
+    "capsuleValidatePublicAstIdenticalToOriginal": true,
+    "evidenceSha256": "a5ecb24dad7dbf091e849bab42af9448222971a30085b04f3a11af2e1a8ee001"
+  },
+  "validation": {
+    "realCombinedResolverInstall": true,
+    "dependencyCheckPackages": 21,
+    "sourceTransferPassed": 2,
+    "installedTransferPassed": 2,
+    "skipped": 0,
+    "editablePeers": 0,
+    "python": "3.13.11"
+  },
+  "transferCoverage": [
+    "Selected evidence envelope seals and hashes remain stable",
+    "Destination stage and activation preserve historical-only namespaces",
+    "Cold restart does not populate active operations stores or replay work",
+    "Altered authority and tampered integrity reject",
+    "Bounded partial selection retains omissions and disallowed cache scopes reject"
+  ],
+  "priorEvidence": {
+    "receipt": "qualification/installed-native.json",
+    "operationsSha256": "48738ba8c3e3bf3bd6ab48d0bf4dc8defb8d55bde4a9598dd54c547456733ca1",
+    "pythonPassed": 62,
+    "nodePassed": 8,
+    "note": "Original broader evidence remains bound to original artifacts. It was not reclassified as fresh full-suite validation for this dependency successor."
+  },
+  "limits": [
+    "Fresh qualification covers the named portability 0.1.2 library and adapter wheels; other future versions within the declared range are not individually qualified.",
+    "Broader attempted runs failed under local storage pressure with SQLite disk I/O errors. Logs are retained. A WAL probe initially returned SQLITE_IOERR_SHMSIZE 4874. After removing only task-owned reproducible node_modules, the WAL probe and installed transfer checks passed.",
+    "Hosted CI remains blocked until approved AMPLIFIER_DEPENDENCY_READ_TOKEN is provisioned; no credential bypass or test skipping.",
+    "No live host, browser, device, paid-account, merge, publication or deployment acceptance."
+  ],
+  "logs": [
+    "resolve-install.log",
+    "dependency-check.log",
+    "source-transfer.log",
+    "installed-transfer-retry.log",
+    "installed-python.log",
+    "installed-transfer.log",
+    "installed-owner-isolated.log"
+  ]
+}

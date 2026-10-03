@@ -56,9 +56,13 @@ def import_page(source,destination,*,source_session,session,kind,after=0,limit=2
                     digest=hashlib.sha256(raw.encode()).hexdigest()
                     try:
                         value=json.loads(raw)
-                        if not isinstance(value,dict) or value.get('sessionId')!=source_session or not isinstance(value.get('id'),str):raise ValueError('Unbound source record')
+                        # Native operation admission receipts use requestId,
+                        # unlike the other historical record collections.
+                        if not isinstance(value,dict) or value.get('sessionId')!=source_session:raise ValueError('Unbound source record')
+                        record_identity=value.get('requestId',value.get('id')) if kind=='operation-request' else value.get('id')
+                        if not isinstance(record_identity,str):raise ValueError('Unbound source record')
                         record_id=hashlib.sha256(json.dumps([source_id,kind,rowid,digest,session]).encode()).hexdigest()
-                        summary={key:str(value[key])[:500] for key in ('id','title','name','prompt','state','phase','status') if key in value}
+                        summary={key:str(value[key])[:500] for key in ('id','requestId','title','name','prompt','state','phase','status') if key in value}
                         prior=history.db.execute('SELECT id FROM records WHERE id=?',(record_id,)).fetchone()
                         classification='already-imported' if prior else 'imported-historical'
                     except (ValueError,TypeError):classification='invalid-source-retained';record_id=None

@@ -1,5 +1,9 @@
 # Amplifier Unified operations capability
 
+Start with the [local vision](docs/VISION.md), [versioned contract entry](contracts/operations.v1.md)
+and [agent entry](AGENTS.md). They connect inherited family promises to existing
+interfaces, falsifiers and acceptance boundaries; they introduce no new runtime scope.
+
 Independent product owner for durable questions, schedules and process evidence. Python
 uses `amplifier-scheduling` and `amplifier-operations` through their public package
 APIs. No AppService, native Python engine or host-private imports. MIT provenance:
@@ -80,6 +84,50 @@ existing native input/history authority remains unchanged. UI placement, actual
 notification delivery, MCP/worker receipt composition, and old schedule
 migration require their corresponding registered owners/integration. No missing
 callback is represented as a successful external action.
+
+## Installed native qualification
+
+`test/native.integration.test.mjs` composes the installed operations Node archive,
+sealed Python owner wheel, official AHP host package and actual ACP/Core/Foundation
+runtime. The offline provider is deliberately synthetic; no account is accessed.
+It covers exact saved question proof and canonical provenance, an agent follow-up,
+active-turn answer refusal, generation-confirmed interruption, real process output,
+stdin/EOF, process cancellation, one-shot scheduling, a lost reply after confirmed
+native execution, and owner/host restart without replay or a cold process remount.
+
+`questionTurns.active:false` is the current public native boundary. Answering while
+a turn runs retains the answer with rejected delivery. The answer is not rerouted
+through steering, automatically retried after interruption, or treated as unsaved.
+Actual active-turn question delivery needs a new host/native authority and provenance
+contract. This suite qualifies the existing refusal, not that missing capability.
+
+To reproduce, use task-owned installations of the candidate packages and the current
+compatible native modules. Build and install the wheel in `test/fixtures/provider`
+into the native interpreter. Run that interpreter with `-I
+test/prepare_native_fixture.py /new/owned/fixture` to create isolated home, appHome,
+bundle and workspace. The fixture opts into managed bash/stdin only for its local
+test commands; it is not a production configuration. Install the operations and
+host Node archives into an independent consumer, then copy `test/*.test.mjs` there.
+Set these variables to the installed absolute paths and run `node --test` on those
+copied files:
+
+| Variable | Installed input |
+| --- | --- |
+| `OPERATIONS_NATIVE_HOST_MODULE` | Host `dist/index.js` file URL |
+| `OPERATIONS_NATIVE_NODE_MODULE` | Operations `dist/index.js` file URL |
+| `OPERATIONS_OWNER_PYTHON` | Interpreter containing the sealed owner wheel |
+| `RETENTION_NODE_MODULE` | Same installed operations module URL |
+| `RETENTION_PYTHON` | Same installed owner interpreter |
+| `ACP_EXECUTABLE` | Installed `amplifier-acp` executable |
+| `ACP_NATIVE_TEST_CONFIG` | New fixture `config.json` |
+| `ACP_NATIVE_TEST_WORKSPACE` | New fixture `workspace` directory |
+
+Also run the installed owner interpreter with `-I -m pytest python/tests -q`.
+The native test skips explicitly when its peer inputs are absent; retention tests
+require their installed inputs separately. Set `PYTHONDONTWRITEBYTECODE=1` when
+using read-only installed peers. Receipt `qualification/installed-native.json`
+records exact candidate archive hashes, versions and acceptance limits. Browser,
+device, external-account, Linux activation and live adoption remain separate.
 
 Questions preserve six shared action names and a selected-session `questions`
 topic: `{questions:{[uri]:records},questionPage:{nextCursor}}`. The initial topic
@@ -191,6 +239,9 @@ schedule, deliver an answer, recreate a process or confer tool authority. Proces
 output chunks, event journals, opaque unscoped receipts and unscopable malformed
 observation rows remain in the source and are explicit omissions. No host startup
 import or automatic legacy work replay is supported.
+Operation-request imports recognize the original receipt's `requestId` identity;
+the retained JSON and digest stay exact. An imported unknown receipt is evidence,
+never an active admission or permission to retry its command.
 
 Schedule preview optionally supplies a bounded trusted `destinationSummary`
 (engine and workspace). The reviewed configuration hash remains an admission
