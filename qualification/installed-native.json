@@ -1,0 +1,79 @@
+{
+  "date": "2026-10-03",
+  "repository": "microsoft/amplifier-unified-capability-operations",
+  "baseline": "e0ad2e8c2cd5f59661fb323c7f15ee9013711fc0",
+  "packageVersion": "0.1.0",
+  "publicContractDelta": "No protocol/execution-authority change. Explicit operation-request legacy import accepts requestId while retaining id compatibility; summary includes requestId.",
+  "change": "Repair explicit legacy operation-request identity, qualify installed peers with offline fixture, and refresh Foundation-main development lock. No execution/delivery authority change.",
+  "peers": {
+    "host": "30f5129491376a34e8f5fda82f03f012210b8fa3",
+    "native": "f530e541d6e6a32f250c76dc16ef40c6eaec6564",
+    "foundation": "8462030de39e2f86beda8b7758925520683e3678",
+    "coreVersion": "2.0.1",
+    "loopLive": "bdd76badc58091ec47b55bb92cdf9e6f5bcc8e26",
+    "bash": "083f72fcac41424d4dd07947c612ff695bef0938"
+  },
+  "artifacts": {
+    "amplifier-unified-host-0.1.0.tgz": {
+      "sha256": "2e817365c6d7af64a360cb6981000bbca225372859c29cdde32330558d400ab4",
+      "bytes": 197204
+    },
+    "amplifier-unified-operations-capabilities-0.1.0.tgz": {
+      "sha256": "7f56a09b5bdaea3384916a79a3a567c906c2762e05c0854527663e93047e654c",
+      "bytes": 18050
+    },
+    "amplifier_acp-0.1.0-py3-none-any.whl": {
+      "sha256": "d8b57bb930b608c05541e4135b5521c0e782113bd13f70936e807635cb333b1d",
+      "bytes": 432840
+    },
+    "amplifier_module_provider_operations_fixture-0.1.0-py3-none-any.whl": {
+      "sha256": "cbe63e3ebc9c38f402504160ff4fd3df07d7a2b12ba00b40989b689299fb00ac",
+      "bytes": 2252
+    },
+    "amplifier_unified_operations-0.1.0-py3-none-any.whl": {
+      "sha256": "48738ba8c3e3bf3bd6ab48d0bf4dc8defb8d55bde4a9598dd54c547456733ca1",
+      "bytes": 43207
+    }
+  },
+  "byteVerification": {
+    "ownerPythonSourceWheelInstalled": 17,
+    "ownerNodeArchiveInstalled": 11,
+    "configuredEditablePeers": 0
+  },
+  "tests": {
+    "installedPython": {
+      "passed": 62,
+      "skipped": 0
+    },
+    "installedNode": {
+      "passed": 8,
+      "skipped": 0
+    },
+    "dependencyCheck": {
+      "native": true,
+      "operations": true
+    }
+  },
+  "qualified": [
+    "Exact saved idle question delivery through installed owner, official AHP host, ACP, Core and Foundation; native canonical provenance",
+    "Busy active-turn answer remains saved/rejected; no steering fallback or automatic retry",
+    "Agent follow-up retains coordination origin and cannot serve as user-consent evidence",
+    "Generation-confirmed interruption returns cancelled; duplicate interruption does not advance revision",
+    "Actual bash managed process start/output, stdin/EOF and cancellation observed through durable owner",
+    "Actual one-shot scheduled run completes; original schedule command receipt remains immutable",
+    "Lost owner reply after confirmed native answer execution retains unknown delivery; restart and exact retry do not resend",
+    "Host restart is cold; saved process receipt stays readable and old process input cannot start a worker",
+    "Offline legacy import preserves source bytes, creates immutable historical-only pages and does not populate active stores",
+    "Held retention/managed-file/service fences preserve deferred references and reject altered/uncertain release",
+    "Selected question/observation cold pages and covering-index attention checks include 25000 unrelated records"
+  ],
+  "limits": [
+    "Active-turn question execution is unimplemented by the current questionTurns.active:false host/native contract; a new exact authority/provenance contract is required",
+    "Offline synthetic provider; no paid-model, real-account, browser, physical-device, Linux service activation or live Spark adoption claims",
+    "Quiet observation installed-owner test uses callback fixtures; real MCP/native composition is separate distribution evidence",
+    "Legacy import is explicit offline reviewed mapping only; no production user records imported",
+    "Task-owned macOS Python3.13 and Node25 installation; source main and package source bytes are distinct from deployed adoption"
+  ],
+  "reproduction": "README Installed native qualification; test/prepare_native_fixture.py; test/native.integration.test.mjs",
+  "nextIntegrationStep": "Root reviews draft PR and qualifies these exact candidate archives with the composed current distribution; no merge, publication or deployment performed."
+}

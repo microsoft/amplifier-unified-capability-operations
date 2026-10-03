@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import {mkd
 const identity={installationId:'installation',dataScope:'owned',ownerId:'retained-platform',instanceId:'host-one',releaseDigest:'signed-release'};
 const c={fenceId:'service-fence',commandId:'stop-service',purpose:'service-stop',instanceId:'host-one',dataScope:'owned',serviceIdentity:identity};
 const p={verified:true,fenceId:c.fenceId,commandId:c.commandId,outcome:'ready',instanceId:'host-two',dataScope:c.dataScope,receiptId:'platform-settlement',kind:'service-lifecycle',serviceOutcome:'resumed',expected:identity,observed:{...identity,instanceId:'host-two'},resumeCommandId:'resume',exitReceiptId:'owned-exit',readyReceiptId:'authenticated-ready'};
-import {createOperationsCapabilities} from '../dist/index.js';
+const {createOperationsCapabilities}=await import(process.env.OPERATIONS_NATIVE_NODE_MODULE??'../dist/index.js');
 const python=process.env.OPERATIONS_OWNER_PYTHON??resolve('python/.venv/bin/python');
 test('installed Python service participant survives SIGKILL, rejects generic authority and reuses exact confirmed release',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'service-rpc-')),config=join(directory,'owner.json'),pidfile=join(directory,'pid');await writeFile(config,JSON.stringify({dataDir:join(directory,'data')}));

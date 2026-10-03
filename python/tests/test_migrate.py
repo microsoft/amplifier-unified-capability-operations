@@ -66,3 +66,42 @@ def test_import_refuses_running_owner_and_missing_collection_is_explicit(tmp_pat
     result=import_page(source,target,source_session='chosen',session=SID,kind='question')
     assert result['tableAbsent'] is True and result['items']==[]
     with pytest.raises(ValueError,match='outside'):import_one(source,tmp_path)
+
+
+@pytest.mark.parametrize('kind,identity_field', [('schedule','id'),('schedule-run','id'),('operation','id'),('operation-request','requestId'),('operation-request','id'),('question','id'),('observer','id'),('watch','id'),('run','id'),('outbox','id')])
+async def test_all_legacy_collections_retain_scoped_evidence_without_execution_authority(tmp_path,kind,identity_field):
+    source=tmp_path/'legacy.sqlite';target=tmp_path/'owner'
+    tables={'schedule':'schedules','schedule-run':'schedule_runs','operation':'operations','operation-request':'operation_requests','question':'questions'}
+    record={'sessionId':'chosen','state':'outcome_unknown','status':'active','phase':'pending','answer':{'text':'Retained answer'},'exactEvidence':'Original receipt'}
+    record[identity_field]='retained-original'
+    raw=json.dumps(record,indent=2)
+    db=sqlite3.connect(source)
+    if kind in tables:
+        db.execute(f'CREATE TABLE {tables[kind]} (session_id TEXT,value TEXT)')
+        db.execute(f'INSERT INTO {tables[kind]} VALUES (?,?)',('chosen',raw))
+        db.execute(f'INSERT INTO {tables[kind]} VALUES (?,?)',('elsewhere',json.dumps({**record,'sessionId':'elsewhere'})))
+    else:
+        db.execute('CREATE TABLE observation_objects (kind TEXT,body TEXT)')
+        db.execute('INSERT INTO observation_objects VALUES (?,?)',(kind,raw))
+        db.execute('INSERT INTO observation_objects VALUES (?,?)',(kind,json.dumps({**record,'sessionId':'elsewhere'})))
+    db.commit();db.close();before=source.read_bytes()
+    result=import_page(source,target,source_session='chosen',session=SID,kind=kind)
+    assert len(result['items'])==1 and result['items'][0]['classification']=='imported-historical'
+    assert result['sourceRetained'] and not result['executionAuthority'] and not result['replayed']
+    history=HistoricalRecords(target/'legacy.sqlite3')
+    try:
+        page=history.page(SID,{'kind':kind});assert len(page['items'])==1
+        saved=history.read(SID,page['items'][0]['id'])
+        assert saved['record']==record and saved['sha256']==hashlib.sha256(raw.encode()).hexdigest()
+        assert not saved['controlAvailable'] and not saved['executionAuthority']
+    finally:history.close()
+    async def forbidden(*_):raise AssertionError('Import cannot invoke native work or deliver retained answers')
+    owner=Owner({'dataDir':str(target)},forbidden,forbidden)
+    try:
+        assert owner.schedules.store.list(SID)==[] and owner.operations.journal.page(SID)==[]
+        assert owner.operations.requests.list(SID)==[] and owner.questions.page(SID,{})['items']==[]
+        assert owner.schedules.pending==set()
+        again=await owner.request('action',{'operation':'operations.history.read','session':SID,'args':{'id':saved['id']}})
+        assert again['record']==record and not again['replayed']
+    finally:await owner.close()
+    assert source.read_bytes()==before
