@@ -101,6 +101,11 @@ export class OperationsCapabilities {
  questionDependency=async(session:string,id:string)=>{await this.options.inspectSession(session);return this.owner.request('questionDependency',{session,id});};
  authorizeQuestionDelivery=async(session:string,args:Json)=>{await this.options.inspectSession(session);return this.owner.request('questionDelivery',{session,args});};
  authorizeObservation=async(session:string,args:Json)=>{await this.options.inspectSession(session);return this.owner.request('observationAdmission',{session,args});};
+ /** Trusted portability composition verifies signed pairing and release before these calls. */
+ exportTransferEvidence=async(args:Json)=>{await this.options.inspectSession(args.session);return this.owner.request('exportTransferEvidence',args);};
+ stageTransferEvidence=async(args:Json)=>this.owner.request('stageTransferEvidence',args);
+ activateTransferEvidence=async(args:Json)=>this.owner.request('activateTransferEvidence',args);
+ readTransferEvidence=async(args:Json)=>{await this.options.inspectSession(args.session);return this.owner.request('readTransferEvidence',args);};
  close=async()=>this.owner.close();
 }
 export function createOperationsCapabilities(options:Options){return new OperationsCapabilities(options);}

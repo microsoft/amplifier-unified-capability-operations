@@ -7,7 +7,7 @@
     "python": "3.13.11"
   },
   "tests": {
-    "pythonPassed": 36,
+    "pythonPassed": 38,
     "nodePassed": 3
   },
   "limits": [
@@ -19,5 +19,16 @@
     "Owner shutdown records uncertain delivery before closing SQL; restart and duplicates never replay",
     "25k-record indexed cold catalog and complete UTF-8 byte-bounded pages"
   ],
-  "sourceIdentity": "Git commit containing this receipt"
+  "sourceIdentity": "Git commit containing this receipt",
+  "transferEvidence": {
+    "codec": "public amplifier-portability 25bc91c",
+    "historicalOnly": true,
+    "maxBodyBytes": 1048576,
+    "tests": [
+      "restart idempotency",
+      "source scope isolation",
+      "explicit omissions",
+      "no destination execution tables"
+    ]
+  }
 }

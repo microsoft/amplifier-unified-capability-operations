@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 from filelock import FileLock
 from jsonschema import Draft202012Validator
+from .transfer import TransferEvidence
 from .scheduler import Scheduler
 from .operations import Operations
 from .questions import Questions
@@ -38,6 +39,7 @@ class Owner:
         self.schedules=Scheduler(root/'schedules.sqlite3',self.callback,lambda sid:self.changed(sid,'schedules'))
         self.operations=Operations(root/'operations.sqlite3',self.callback,lambda sid:self.changed(sid,'operations'))
         self.observations=Observations(root/'observations.sqlite3',self.callback,lambda sid:self.changed(sid,'observations'));self.observations_enabled=False
+        self.transfer=TransferEvidence(root/'transfer.sqlite3',self)
     async def callback(self,method,args):
         if method=='questionDependency':return self.questions.dependency(args['session'],args['id'])
         if method=='operationSources':
@@ -61,6 +63,8 @@ class Owner:
             if self.observations_enabled:await self.observations.tick()
             await asyncio.sleep(2)
     async def request(self,method,params):
+        if method in {'exportTransferEvidence','stageTransferEvidence','activateTransferEvidence','readTransferEvidence'}:
+            return getattr(self.transfer,{'exportTransferEvidence':'export','stageTransferEvidence':'stage','activateTransferEvidence':'activate','readTransferEvidence':'read'}[method])(params)
         if method=='initialize':return {'protocolVersion':1,'scheduledAdmission':'host','actions':list(self.schemas)}
         if method=='actions':return self.schemas
         if method=='start':self.observations_enabled=params.get('observations') is True;self.start();return {'started':True}
@@ -101,7 +105,7 @@ class Owner:
     async def close(self):
         self.closed=True
         if self.tick_task:self.tick_task.cancel();await asyncio.gather(self.tick_task,return_exceptions=True)
-        await self.observations.close();await self.schedules.close();await self.operations.close();self.questions.close();self.lease.release()
+        await self.observations.close();await self.schedules.close();await self.operations.close();self.questions.close();self.transfer.close();self.lease.release()
 
 class Peer:
     def __init__(self,config):self.pending={};self.counter=0;self.tasks=set();self.closing=False;self.owner=Owner(config,self.host,self.notify)

@@ -140,3 +140,17 @@ The native authorizer verifies the exact host `observationAdmission` proof,
 including the sole execution revision advance caused by its own typed admission.
 A known no-effect receipt can retain only its explicitly proved revision advance;
 any intervening unrelated execution still revokes the watch.
+
+Transfer composition may call `exportTransferEvidence`, `stageTransferEvidence`,
+`activateTransferEvidence` and `readTransferEvidence` directly. These are private
+owner hooks, never public client actions. The portability owner verifies signed
+pairing, byte-preserving evidence and the release before staging or activation.
+The returned owner is `unified.operations`; exports cap at 1 MiB to preserve the
+4 MB private JSON transport bound. Omitted history is counted explicitly and
+requires preview acceptance. Each transfer ID seals one exact export.
+
+Imported schedule, operation, question and watch records live in a separate
+immutable history database. Source-host plus transfer-ID namespaces distinguish
+original IDs. Import never inserts into scheduler, question-delivery, operation
+control, or observation outbox tables. Unknown source outcomes remain unknown.
+Reads return selected bounded pages; history confers no execution authority.

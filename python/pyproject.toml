@@ -7,12 +7,14 @@ version="0.1.0"
 requires-python=">=3.11"
 license="MIT"
 license-files=["LICENSE"]
-dependencies=["amplifier-scheduling==0.1.0","amplifier-operations==0.1.0","jsonschema>=4.23,<5","filelock>=3.20,<4"]
+dependencies=["amplifier-worktrees==0.1.0","amplifier-portability==0.1.0","amplifier-scheduling==0.1.0","amplifier-operations==0.1.0","jsonschema>=4.23,<5","filelock>=3.20,<4"]
 [project.scripts]
 amplifier-unified-operations="amplifier_unified_operations.server:main"
 [tool.hatch.build.targets.wheel]
 packages=["amplifier_unified_operations"]
 [tool.uv.sources]
+amplifier-worktrees={git="https://github.com/microsoft/amplifier-foundation",branch="main",subdirectory="libraries/worktrees"}
+amplifier-portability={git="https://github.com/microsoft/amplifier-portability",branch="main"}
 amplifier-scheduling={git="https://github.com/microsoft/amplifier-foundation",branch="main",subdirectory="libraries/scheduling"}
 amplifier-operations={git="https://github.com/microsoft/amplifier-foundation",branch="main",subdirectory="libraries/operations"}
 [dependency-groups]
