@@ -79,13 +79,16 @@ class Owner:
             await asyncio.sleep(2)
     async def request(self,method,params):
         if method=='quiescence.acquire':
+            if params.get('purpose')=='service-stop' and getattr(self.intake,'SERVICE_STOP_VERSION',0)!=1:return {'acquired':False,'executed':False,'reason':'service-stop-unavailable'}
             value=self.intake.acquire(params,pending=len(self.schedules.pending)+len(self.observations.tasks))
             if not value['acquired']:
                 self.awaiting_idle=True
                 for task in self.schedules.pending|set(self.observations.tasks.values()):
                     task.add_done_callback(lambda _task:asyncio.create_task(self.maybe_idle()))
             return value
-        if method=='quiescence.release':return self.intake.release(params)
+        if method=='quiescence.release':
+            if params.get('purpose')=='service-stop' and getattr(self.intake,'SERVICE_STOP_VERSION',0)!=1:raise ValueError('Service-stop release unavailable in installed library')
+            return self.intake.release(params)
         if method=='quiescence.inspect':return {'intakeClosed':bool(self.intake.fence),'fence':self.intake.fence,'activeRequests':self.intake.calls,'background':self.intake.background}
         readonly=self.intake.readonly(method,params)
         if self.intake.fence and not readonly and method!='start':raise ValueError('Owner intake is closed; no new operation was admitted')
@@ -98,7 +101,7 @@ class Owner:
     async def _request(self,method,params):
         if method in {'exportTransferEvidence','stageTransferEvidence','activateTransferEvidence','readTransferEvidence'}:
             return getattr(self.transfer,{'exportTransferEvidence':'export','stageTransferEvidence':'stage','activateTransferEvidence':'activate','readTransferEvidence':'read'}[method])(params)
-        if method=='initialize':return {'protocolVersion':1,'scheduledAdmission':'host','actions':list(self.schemas)}
+        if method=='initialize':return {'protocolVersion':1,'scheduledAdmission':'host','quiescence':{'version':1,**({'serviceStop':{'version':1}} if getattr(self.intake,'SERVICE_STOP_VERSION',0)==1 else {})},'actions':list(self.schemas)}
         if method=='actions':return self.schemas
         if method=='start':self.observations_enabled=params.get('observations') is True;self.start();return {'started':True}
         if method=='observe':return await self.operations.observe(params['session'],params['nativeSessionId'],params['event'])
