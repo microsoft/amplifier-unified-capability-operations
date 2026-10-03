@@ -38,7 +38,7 @@ class Owner:
         root=Path(config['dataDir']).expanduser().resolve();root.mkdir(parents=True,exist_ok=True,mode=0o700)
         self.lease=FileLock(str(root/'owner.lock'));self.lease.acquire(timeout=0)
         self.intake=Intake(root/'intake.sqlite3')
-        self.host=host;self.notify=notify;self.schemas=definitions();self.revisions={};self.tick_task=None;self.closed=False
+        self.host=host;self.notify=notify;self.schemas=definitions();self.revisions={};self.tick_task=None;self.closed=False;self.awaiting_idle=False
         self.root=root;self._historical=None
         self.questions=Questions(root/'questions.sqlite3',host,lambda sid:self.changed(sid,'questions'))
         self.schedules=Scheduler(root/'schedules.sqlite3',self.callback,lambda sid:self.changed(sid,'schedules'))
@@ -60,6 +60,10 @@ class Owner:
         await self.notify('owner/changed',{'session':sid,'topic':topic})
     def start(self):
         if self.tick_task is None:self.tick_task=asyncio.create_task(self.loop())
+    async def maybe_idle(self):
+        if self.awaiting_idle and not self.closed and not self.intake.calls and not self.intake.background and not self.schedules.pending and not self.observations.tasks:
+            self.awaiting_idle=False
+            await self.notify('owner/idle',{})
     async def loop(self):
         while not self.closed:
             if not self.intake.fence:
@@ -69,10 +73,18 @@ class Owner:
                     except asyncio.CancelledError:raise
                     except Exception as exc:self.schedules.error=type(exc).__name__
                     if self.observations_enabled:await self.observations.tick()
-                finally:self.intake.background-=1
+                finally:
+                    self.intake.background-=1
+                    await self.maybe_idle()
             await asyncio.sleep(2)
     async def request(self,method,params):
-        if method=='quiescence.acquire':return self.intake.acquire(params,pending=len(self.schedules.pending)+len(self.observations.tasks))
+        if method=='quiescence.acquire':
+            value=self.intake.acquire(params,pending=len(self.schedules.pending)+len(self.observations.tasks))
+            if not value['acquired']:
+                self.awaiting_idle=True
+                for task in self.schedules.pending|set(self.observations.tasks.values()):
+                    task.add_done_callback(lambda _task:asyncio.create_task(self.maybe_idle()))
+            return value
         if method=='quiescence.release':return self.intake.release(params)
         if method=='quiescence.inspect':return {'intakeClosed':bool(self.intake.fence),'fence':self.intake.fence,'activeRequests':self.intake.calls,'background':self.intake.background}
         readonly=self.intake.readonly(method,params)
@@ -80,7 +92,9 @@ class Owner:
         if not readonly:self.intake.calls+=1
         try:return await self._request(method,params)
         finally:
-            if not readonly:self.intake.calls-=1
+            if not readonly:
+                self.intake.calls-=1
+                await self.maybe_idle()
     async def _request(self,method,params):
         if method in {'exportTransferEvidence','stageTransferEvidence','activateTransferEvidence','readTransferEvidence'}:
             return getattr(self.transfer,{'exportTransferEvidence':'export','stageTransferEvidence':'stage','activateTransferEvidence':'activate','readTransferEvidence':'read'}[method])(params)

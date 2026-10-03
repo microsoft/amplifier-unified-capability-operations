@@ -21,6 +21,7 @@ export interface Options {
  operationSources?:(uri:string,options:{id?:string;limit:number;cursor?:[number,string]})=>Promise<Json[]>;
  notifySchedule?:(uri:string,run:Json)=>Promise<void>;
  onInvalidate?:(topic:string,scope:string)=>void;
+ onMayBeIdle?:()=>void;
 }
 const METHODS=new Set(['inspectSession','nativeControl','nativeControlExisting','readUserMessage','createSession','submitScheduled','waitForTurn','submitQuestionAnswer','submitObservation','readTaskState','qualifiedObservation','questionDependency','operationSources','notifySchedule']);
 const names={schedules:['list','read','request','preview','create','update','pause','resume','cancel','report','reconcile'].map(n=>'schedule.'+n),operations:['list','status','read','wait','submit','write','request','cancel','history.list','history.read'].map(n=>'operations.'+n),questions:['create','list','read','answer','cancel','supersede'].map(n=>'question.'+n),observations:['qualify','observers','preview','create','request','list','read','report','pause','cancel','resume'].map(n=>'observation.'+n)};
@@ -28,7 +29,7 @@ const sessionOf=(context:Context)=>typeof context.session==='string'?context.ses
 /** Two-way owner channel. Calls are never retried after lost transport. */
 export class OwnerConnection {
  private process?:ChildProcessWithoutNullStreams;private ready?:Promise<void>;private next=0;private closed=false;private pending=new Map<number,{resolve:(r:any)=>void;reject:(e:Error)=>void}>();
- constructor(private launcher:Launcher,private callback:(method:string,args:Json)=>Promise<any>,private changed:(scope:string,topic?:string)=>void){}
+ constructor(private launcher:Launcher,private callback:(method:string,args:Json)=>Promise<any>,private changed:(scope:string,topic?:string)=>void,private idle:()=>void=()=>{}){}
  private fail(message:string){this.closed=true;for(const entry of this.pending.values())entry.reject(Error(message));this.pending.clear();}
  private write(row:Json){const data=JSON.stringify(row)+'\n';if(Buffer.byteLength(data)>4_000_000)throw Error('Owner frame exceeds4MB');if(this.closed||!this.process)throw Error('Owner unavailable; uncertain work was not replayed');this.process.stdin.write(data,error=>{if(error)this.fail('Owner transport failed; outcome unknown.');});}
  private start(){
@@ -43,6 +44,7 @@ export class OwnerConnection {
  }
  private async receive(line:string){
   let row:Json;try{row=JSON.parse(line);}catch{this.fail('Invalid owner response');this.process?.kill();return;}
+  if(row.method==='owner/idle'){this.idle();return;}
   if(row.method==='owner/changed'){this.changed(row.params.session,row.params.topic);return;}
   if(row.method){
    const method=String(row.method).replace(/^host\//,'');
@@ -62,7 +64,7 @@ export class OperationsCapabilities {
  readonly manifest:{version:number;topics:Record<string,Json>;actions:Record<string,Json>};
  readonly quiescenceAccess:Record<string,'read'>;
  private owner:OwnerConnection;private revision=0;
- constructor(private options:Options){const topics=Object.keys(names).filter(topic=>topic!=='observations'||options.qualifiedObservation&&options.readTaskState&&options.submitObservation);this.manifest={version:1,topics:Object.fromEntries(topics.map(topic=>[topic,{uri:`amplifier-capability://operations/${topic}`,version:1,watch:true}])),actions:Object.fromEntries(topics.flatMap(topic=>names[topic as keyof typeof names].map(operation=>[operation,{topic,operation,method:'x-amplifier/capabilityAction'}])))};this.quiescenceAccess=Object.fromEntries([...quiescenceReads].filter(name=>name in this.manifest.actions).map(name=>[name,'read']));this.owner=new OwnerConnection(options.owner,(m,p)=>this.callback(m,p),(scope,topic)=>{for(const selected of topic&&topic in this.manifest.topics?[topic]:topics)options.onInvalidate?.(selected,scope);});}
+ constructor(private options:Options){const topics=Object.keys(names).filter(topic=>topic!=='observations'||options.qualifiedObservation&&options.readTaskState&&options.submitObservation);this.manifest={version:1,topics:Object.fromEntries(topics.map(topic=>[topic,{uri:`amplifier-capability://operations/${topic}`,version:1,watch:true}])),actions:Object.fromEntries(topics.flatMap(topic=>names[topic as keyof typeof names].map(operation=>[operation,{topic,operation,method:'x-amplifier/capabilityAction'}])))};this.quiescenceAccess=Object.fromEntries([...quiescenceReads].filter(name=>name in this.manifest.actions).map(name=>[name,'read']));this.owner=new OwnerConnection(options.owner,(m,p)=>this.callback(m,p),(scope,topic)=>{for(const selected of topic&&topic in this.manifest.topics?[topic]:topics)options.onInvalidate?.(selected,scope);},()=>options.onMayBeIdle?.());}
  private async callback(method:string,args:Json):Promise<any>{
   const sid=args.session as string;
   switch(method){

@@ -30,8 +30,9 @@ async def test_active_admission_cannot_race_the_fence_and_reads_remain_available
             return []
         raise AssertionError(method)
 
-    async def changed(*args):
-        pass
+    events=[]
+    async def changed(method,args):
+        events.append(method)
 
     owner = Owner({'dataDir': str(tmp_path)}, host, changed)
     params = dict(session=SID, operation='operations.submit', origin='ui',
@@ -42,6 +43,7 @@ async def test_active_admission_cannot_race_the_fence_and_reads_remain_available
         assert (await owner.request('quiescence.acquire', CONTEXT))['acquired'] is False
         finish.set()
         await active
+        assert events.count('owner/idle')==1
         assert (await owner.request('quiescence.acquire', CONTEXT))['acquired'] is True
         with pytest.raises(ValueError, match='intake is closed'):
             await owner.request('action', {**params, 'args': {**params['args'], 'requestId': 'submit-two'}})
