@@ -1,5 +1,9 @@
 # Amplifier Unified operations capability
 
+Start with the [local vision](docs/VISION.md), [versioned contract entry](contracts/operations.v1.md)
+and [agent entry](AGENTS.md). They connect inherited family promises to existing
+interfaces, falsifiers and acceptance boundaries; they introduce no new runtime scope.
+
 Independent product owner for durable questions, schedules and process evidence. Python
 uses `amplifier-scheduling` and `amplifier-operations` through their public package
 APIs. No AppService, native Python engine or host-private imports. MIT provenance:
