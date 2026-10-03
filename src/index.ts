@@ -23,7 +23,7 @@ export interface Options {
  onInvalidate?:(topic:string,scope:string)=>void;
 }
 const METHODS=new Set(['inspectSession','nativeControl','nativeControlExisting','readUserMessage','createSession','submitScheduled','waitForTurn','submitQuestionAnswer','submitObservation','readTaskState','qualifiedObservation','questionDependency','operationSources','notifySchedule']);
-const names={schedules:['list','read','preview','create','update','pause','resume','cancel','report','reconcile'].map(n=>'schedule.'+n),operations:['list','status','read','wait','submit','write','request','cancel'].map(n=>'operations.'+n),questions:['create','list','read','answer','cancel','supersede'].map(n=>'question.'+n),observations:['qualify','observers','preview','create','request','list','read','report','pause','cancel','resume'].map(n=>'observation.'+n)};
+const names={schedules:['list','read','request','preview','create','update','pause','resume','cancel','report','reconcile'].map(n=>'schedule.'+n),operations:['list','status','read','wait','submit','write','request','cancel'].map(n=>'operations.'+n),questions:['create','list','read','answer','cancel','supersede'].map(n=>'question.'+n),observations:['qualify','observers','preview','create','request','list','read','report','pause','cancel','resume'].map(n=>'observation.'+n)};
 const sessionOf=(context:Context)=>typeof context.session==='string'?context.session:context.session?.uri;
 /** Two-way owner channel. Calls are never retried after lost transport. */
 export class OwnerConnection {

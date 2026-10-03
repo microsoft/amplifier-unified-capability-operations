@@ -58,6 +58,24 @@ async def test_idle_reads_never_mount_and_topic_is_scoped(owned):
     assert not any(m=='nativeControl' for m,_ in host.calls)
     with pytest.raises(ValueError,match='trusted'):await action(owner,'schedule.list',{'sessionId':'ahp-session:/other'})
 
+async def test_lost_schedule_response_recovers_exact_committed_result_without_new_work(owned):
+    owner,host,now,_=owned
+    async def dropped(_):raise RuntimeError('Lost response after durable schedule write')
+    owner.schedules.changed=dropped
+    with pytest.raises(RuntimeError,match='Lost response'):await create(owner)
+    calls=len(host.calls)
+    receipt=await action(owner,'schedule.request',{'requestId':'command'},command='inspect')
+    assert receipt['replayed'] is False and receipt['receipt']['status']=='committed'
+    original=receipt['receipt']['result']['schedule'];assert original['revision']==1
+    assert len(host.calls)==calls and len(owner.schedules.store.list(SID))==1
+    async def observed(_):pass
+    owner.schedules.changed=observed
+    await action(owner,'schedule.pause',{'id':original['id'],'expectedRevision':1},command='pause')
+    assert (await action(owner,'schedule.request',{'requestId':'command'}))['receipt']['result']['schedule']==original
+    assert (await action(owner,'schedule.request',{'requestId':'never-submitted'}))['receipt'] is None
+    other=await owner.request('action',{'session':'ahp-session:/other','operation':'schedule.request','args':{'requestId':'command'},'commandId':'inspect','origin':'ui'})
+    assert other['receipt'] is None
+
 async def test_review_cas_agent_provenance_and_stop_intent(owned):
     owner,host,now,_=owned;args=schedule_args();preview=await action(owner,'schedule.preview',args)
     host.source['inputOrigin']='scheduler'

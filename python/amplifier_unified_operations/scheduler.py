@@ -45,6 +45,7 @@ class Scheduler:
     async def dispatch(self,action,args,origin,command):
         sid=args['sessionId']
         if action=='schedule.list':return self.list(sid,args)
+        if action=='schedule.request':return {'receipt':self.store.command_receipt(sid,args['requestId']),'replayed':False}
         if action=='schedule.read':
             owner=sid
             try:schedule=self.store.get(sid,args['id'])

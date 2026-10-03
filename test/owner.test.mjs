@@ -18,6 +18,7 @@ test('real Python owner protocol: scoped schedule review, process receipts and b
   const args={prompt:'Explicit fixture monitoring',kind:'monitor',spec:{kind:'interval',timezone:'UTC',startAt:new Date(Date.now()+3600000).toISOString(),intervalSeconds:3600},notificationPolicy:'changes',missedRunPolicy:'latest'};
   const preview=(await invoke('schedule.preview',args)).result;
   const created=await invoke('schedule.create',{...args,expectedRevision:0,previewHash:preview.previewHash});assert.equal(created.result.schedule.status,'active');assert.equal(created.updates[0].data.schedules[sid].length,1);
+  const callsBeforeReceipt=calls.length,recovered=await invoke('schedule.request',{requestId:'schedule.create'},'inspect-created');assert.deepEqual(recovered.result.receipt.result,created.result);assert.deepEqual(recovered.updates,[]);assert.equal(calls.length,callsBeforeReceipt);
   const receipt=await invoke('operations.submit',{requestId:'request1',command:'fixture only'});assert.equal(receipt.result.state,'accepted');
   const again=await invoke('operations.submit',{requestId:'request1',command:'fixture only'},'duplicate');assert.equal(again.result.operationId,'process1');assert.equal(calls.filter(c=>c.op==='operations.submit').length,1);
   await assert.rejects(invoke('operations.submit',{sessionId:'ahp-session:/elsewhere',requestId:'bad',command:'denied'}),/trusted context/);

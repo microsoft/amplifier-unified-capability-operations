@@ -160,3 +160,12 @@ covering disk index for a selected coordination wait. It never loads question
 bodies or starts native work. `questionsComplete` and `questionsTruncated` make
 overflow explicit; a truncated or unavailable owner is not evidence of no
 attention. Composition combines this with actual host approvals and task state.
+
+Schedule mutation recovery uses `schedule.request {requestId}` in the selected
+session. `requestId` is the original capability commandId. The returned
+`receipt` is either null or `{commandId,status:"committed",result}` containing
+the exact saved schedule/run result, even after later edits. Inspection does
+not invoke native callbacks, start work or publish a new schedule snapshot.
+Clients retain their pending intent privately and inspect without reissuing a
+create/update. A missing receipt alone does not prove upstream admission failed.
+This uses Foundation scheduling's public `command_receipt` API.
