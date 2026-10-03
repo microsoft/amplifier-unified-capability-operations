@@ -73,3 +73,22 @@ test('qualified observation owner uses passive authority and exact typed handoff
   assert.equal((await action('observation.request',{requestId:'one-watch'})).watch.id,watch.id);
  }finally{await provider.close();await rm(directory,{recursive:true,force:true});}
 });
+
+test('public owner participant holds intake through restart and requires the exact trusted host proof',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'unified-operations-fence-')),config=join(directory,'config.json');await writeFile(config,JSON.stringify({dataDir:join(directory,'owner')}));
+ const context={fenceId:'durable-fence',commandId:'recovery-command',purpose:'recovery',instanceId:'first-host',dataScope:'owned-data'};
+ const calls=[];const make=()=>createOperationsCapabilities({owner:{command:resolve('python/.venv/bin/python'),args:['-m','amplifier_unified_operations.server','--config',config]},inspectSession:async()=>({uri:sid,status:'idle'}),readSessionContext:async()=>({messages:[]}),nativeControl:async(...args)=>{calls.push(args);throw Error('No admission expected');},nativeControlExisting:async()=>{throw Error('No admission');},createSession:async()=>{throw Error('No creation');},submitScheduled:async()=>{throw Error('No schedule');},waitForTurn:async()=>{throw Error('No turn');}});
+ let provider=make();const action=(operation,args={},commandId=operation)=>provider.action({version:1,channel:sid,topic:operation.startsWith('question.')?'questions':'operations',operation,args,commandId},{clientId:'browser',session:sid});
+ try{
+  assert.equal(provider.quiescenceAccess['operations.request'],'read');assert.equal(provider.quiescenceAccess['schedule.preview'],undefined);assert.equal(provider.quiescenceAccess['schedule.report'],undefined);
+  const held=await provider.quiescenceParticipant('operations').acquire(context);assert.equal(held.ownerId,'operations');
+  await assert.rejects(action('question.create',{prompt:'Blocked'}),/intake is closed/);
+  assert.deepEqual((await action('question.list')).result.items,[]);
+  await held.release('unknown');await provider.close();provider=make();await provider.start();
+  await assert.rejects(action('operations.submit',{requestId:'never',command:'Never run'}),/intake is closed/);
+  const participant=provider.quiescenceParticipant('operations'),proof={verified:true,fenceId:context.fenceId,commandId:context.commandId,outcome:'unchanged',instanceId:context.instanceId,dataScope:context.dataScope,receiptId:'checked-native-receipt'};
+  await assert.rejects(participant.reconcileRelease({...context,outcome:'unchanged',proof:{...proof,commandId:'foreign'}}),/proof/);
+  await participant.reconcileRelease({...context,outcome:'unchanged',proof});await participant.reconcileRelease({...context,outcome:'unchanged',proof});
+  assert.equal((await action('question.create',{prompt:'Now admitted',required:false,dependency:'Fixture dependency'})).accepted,true);assert.equal(calls.length,0);
+ }finally{await provider.close();await rm(directory,{recursive:true,force:true});}
+});

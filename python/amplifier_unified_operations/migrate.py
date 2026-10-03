@@ -30,6 +30,12 @@ def import_page(source,destination,*,source_session,session,kind,after=0,limit=2
     destination.mkdir(parents=True,exist_ok=True,mode=0o700)
     source_id=hashlib.sha256(str(source).encode()).hexdigest();table,column,scope,subkind=COLLECTIONS[kind]
     with FileLock(str(destination/'owner.lock'),timeout=0):
+        gate=destination/'intake.sqlite3'
+        if gate.exists():
+            control=sqlite3.connect(gate.as_uri()+'?mode=ro',uri=True)
+            try:
+                if control.execute('SELECT 1 FROM fence LIMIT 1').fetchone():raise ValueError('Destination owner has a retained quiescence fence')
+            finally:control.close()
         history=HistoricalRecords(destination/'legacy.sqlite3');legacy=None
         try:
             legacy=sqlite3.connect(source.as_uri()+'?mode=ro',uri=True);legacy.execute('PRAGMA query_only=ON');legacy.execute('BEGIN')

@@ -196,3 +196,21 @@ Schedule preview optionally supplies a bounded trusted `destinationSummary`
 (engine and workspace). The reviewed configuration hash remains an admission
 guard; raw provider credentials or private configuration are not exposed.
 This uses Foundation scheduling's public `command_receipt` API.
+
+## Held quiescence for updates and recovery
+
+`quiescenceParticipant(ownerId)` is a trusted composition port, separate from
+advertised user/agent actions. Its private Python owner durably closes intake
+only when admitted effects, background scheduler ticks, and detached schedule
+and observation jobs are absent. A future due schedule is retained and pauses
+while the fence is held. Active native processes are independently covered by
+the host's native retirement proof; historical unknown receipts do not imply
+live work and are never retried by this port.
+
+Receipt and bounded evidence reads remain available through the exact
+`quiescenceAccess` declarations. Preview actions that may contact a native task
+owner are not classified as passive reads. A retained fence survives owner
+restart, also blocks offline legacy imports, and can reopen only with the exact
+host-verified outcome proof (or the host's pre-effect admission refusal). An
+unknown outcome keeps intake closed. `reconcileRelease` never reruns acquisition
+or a mutation. Reusing a released fence is rejected.

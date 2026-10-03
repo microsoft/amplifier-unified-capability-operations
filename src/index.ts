@@ -55,10 +55,14 @@ export class OwnerConnection {
  async request(method:string,args:Json){await this.start();return this.send(method,args);}
  async close(){if(!this.process){this.closed=true;return;}this.process.stdin.end();await new Promise<void>(resolve=>{const timer=setTimeout(()=>{this.process?.kill();resolve();},4000);this.process!.once('exit',()=>{clearTimeout(timer);resolve();});});this.fail('Owner closed');}
 }
+export interface QuiescenceContext {fenceId:string;commandId:string;purpose:'distribution-update'|'recovery';instanceId:string;dataScope:string;}
+export interface QuiescenceProof {verified:true;fenceId:string;commandId:string;outcome:'ready'|'unchanged';instanceId:string;dataScope:string;receiptId:string;}
+const quiescenceReads=new Set(['schedule.list','schedule.read','schedule.request','operations.list','operations.status','operations.read','operations.wait','operations.request','operations.history.list','operations.history.read','question.list','question.read','observation.observers','observation.request','observation.list','observation.read','observation.report']);
 export class OperationsCapabilities {
  readonly manifest:{version:number;topics:Record<string,Json>;actions:Record<string,Json>};
+ readonly quiescenceAccess:Record<string,'read'>;
  private owner:OwnerConnection;private revision=0;
- constructor(private options:Options){const topics=Object.keys(names).filter(topic=>topic!=='observations'||options.qualifiedObservation&&options.readTaskState&&options.submitObservation);this.manifest={version:1,topics:Object.fromEntries(topics.map(topic=>[topic,{uri:`amplifier-capability://operations/${topic}`,version:1,watch:true}])),actions:Object.fromEntries(topics.flatMap(topic=>names[topic as keyof typeof names].map(operation=>[operation,{topic,operation,method:'x-amplifier/capabilityAction'}])))};this.owner=new OwnerConnection(options.owner,(m,p)=>this.callback(m,p),(scope,topic)=>{for(const selected of topic&&topic in this.manifest.topics?[topic]:topics)options.onInvalidate?.(selected,scope);});}
+ constructor(private options:Options){const topics=Object.keys(names).filter(topic=>topic!=='observations'||options.qualifiedObservation&&options.readTaskState&&options.submitObservation);this.manifest={version:1,topics:Object.fromEntries(topics.map(topic=>[topic,{uri:`amplifier-capability://operations/${topic}`,version:1,watch:true}])),actions:Object.fromEntries(topics.flatMap(topic=>names[topic as keyof typeof names].map(operation=>[operation,{topic,operation,method:'x-amplifier/capabilityAction'}])))};this.quiescenceAccess=Object.fromEntries([...quiescenceReads].filter(name=>name in this.manifest.actions).map(name=>[name,'read']));this.owner=new OwnerConnection(options.owner,(m,p)=>this.callback(m,p),(scope,topic)=>{for(const selected of topic&&topic in this.manifest.topics?[topic]:topics)options.onInvalidate?.(selected,scope);});}
  private async callback(method:string,args:Json):Promise<any>{
   const sid=args.session as string;
   switch(method){
@@ -110,6 +114,20 @@ export class OperationsCapabilities {
  stageTransferEvidence=async(args:Json)=>this.owner.request('stageTransferEvidence',args);
  activateTransferEvidence=async(args:Json)=>this.owner.request('activateTransferEvidence',args);
  readTransferEvidence=async(args:Json)=>{await this.options.inspectSession(args.session);return this.owner.request('readTransferEvidence',args);};
+ /** Trusted composition only. The private Python owner closes intake durably before returning. */
+ quiescenceParticipant(ownerId:string){
+  if(!ownerId||ownerId.length>200)throw Error('Bounded owner identity required');
+  const release=async(context:QuiescenceContext,outcome:'ready'|'unchanged'|'unknown',proof?:QuiescenceProof|{kind:'admission-refused'})=>{
+   const result=await this.owner.request('quiescence.release',{...context,outcome,proof});
+   if(outcome!=='unknown'&&result.released!==true)throw Error('Owner intake release is not confirmed');
+  };
+  return {id:ownerId,acquire:async(context:Readonly<QuiescenceContext>)=>{
+   const exact={...context},result=await this.owner.request('quiescence.acquire',exact);
+   if(result.acquired!==true)return null;
+   if(result.fenceId!==exact.fenceId||result.intakeClosed!==true)throw Error('Owner intake acquisition is not confirmed');
+   return {ownerId,fenceId:exact.fenceId,release:(outcome:'ready'|'unchanged'|'unknown',proof?:QuiescenceProof|{kind:'admission-refused'})=>release(exact,outcome,proof)};
+  },reconcileRelease:async(context:Readonly<QuiescenceContext>&{outcome:'ready'|'unchanged';proof:QuiescenceProof})=>release(context,context.outcome,context.proof)};
+ }
  close=async()=>this.owner.close();
 }
 export function createOperationsCapabilities(options:Options){return new OperationsCapabilities(options);}

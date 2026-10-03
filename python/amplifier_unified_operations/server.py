@@ -8,6 +8,7 @@ from filelock import FileLock
 from jsonschema import Draft202012Validator,ValidationError
 from .errors import ScheduleRefused
 from .history import HistoricalRecords
+from .quiescence import Intake
 from .transfer import TransferEvidence
 from .scheduler import Scheduler
 from .operations import Operations
@@ -36,6 +37,7 @@ class Owner:
     def __init__(self,config,host,notify):
         root=Path(config['dataDir']).expanduser().resolve();root.mkdir(parents=True,exist_ok=True,mode=0o700)
         self.lease=FileLock(str(root/'owner.lock'));self.lease.acquire(timeout=0)
+        self.intake=Intake(root/'intake.sqlite3')
         self.host=host;self.notify=notify;self.schemas=definitions();self.revisions={};self.tick_task=None;self.closed=False
         self.root=root;self._historical=None
         self.questions=Questions(root/'questions.sqlite3',host,lambda sid:self.changed(sid,'questions'))
@@ -60,12 +62,26 @@ class Owner:
         if self.tick_task is None:self.tick_task=asyncio.create_task(self.loop())
     async def loop(self):
         while not self.closed:
-            try:await self.schedules.tick()
-            except asyncio.CancelledError:raise
-            except Exception as exc:self.schedules.error=type(exc).__name__
-            if self.observations_enabled:await self.observations.tick()
+            if not self.intake.fence:
+                self.intake.background+=1
+                try:
+                    try:await self.schedules.tick()
+                    except asyncio.CancelledError:raise
+                    except Exception as exc:self.schedules.error=type(exc).__name__
+                    if self.observations_enabled:await self.observations.tick()
+                finally:self.intake.background-=1
             await asyncio.sleep(2)
     async def request(self,method,params):
+        if method=='quiescence.acquire':return self.intake.acquire(params,pending=len(self.schedules.pending)+len(self.observations.tasks))
+        if method=='quiescence.release':return self.intake.release(params)
+        if method=='quiescence.inspect':return {'intakeClosed':bool(self.intake.fence),'fence':self.intake.fence,'activeRequests':self.intake.calls,'background':self.intake.background}
+        readonly=self.intake.readonly(method,params)
+        if self.intake.fence and not readonly and method!='start':raise ValueError('Owner intake is closed; no new operation was admitted')
+        if not readonly:self.intake.calls+=1
+        try:return await self._request(method,params)
+        finally:
+            if not readonly:self.intake.calls-=1
+    async def _request(self,method,params):
         if method in {'exportTransferEvidence','stageTransferEvidence','activateTransferEvidence','readTransferEvidence'}:
             return getattr(self.transfer,{'exportTransferEvidence':'export','stageTransferEvidence':'stage','activateTransferEvidence':'activate','readTransferEvidence':'read'}[method])(params)
         if method=='initialize':return {'protocolVersion':1,'scheduledAdmission':'host','actions':list(self.schemas)}
@@ -118,6 +134,7 @@ class Owner:
         if self.tick_task:self.tick_task.cancel();await asyncio.gather(self.tick_task,return_exceptions=True)
         await self.observations.close();await self.schedules.close();await self.operations.close();self.questions.close();self.transfer.close()
         if self._historical:self._historical.close()
+        self.intake.close()
         self.lease.release()
 
 class Peer:
