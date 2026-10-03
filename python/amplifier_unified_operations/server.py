@@ -70,6 +70,7 @@ class Owner:
         if method=='start':self.observations_enabled=params.get('observations') is True;self.start();return {'started':True}
         if method=='observe':return await self.operations.observe(params['session'],params['nativeSessionId'],params['event'])
         if method=='interrupted':await self.operations.interrupted(params['session']);return {}
+        if method=='questionAttention':return self.questions.attention(params['session'])
         if method=='questionDependency':return self.questions.dependency(params['session'],params['id'])
         if method=='questionDelivery':return self.questions.authorize_delivery(params['session'],params['args'])
         if method=='observationAdmission':return await self.observations.authorize(params['session'],params['args'])

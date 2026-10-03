@@ -36,7 +36,9 @@ test('saved question answer proves authority through reentrant stdio and preserv
  const invoke=(operation,args={},commandId=operation)=>provider.action({version:1,channel:sid,topic:'questions',operation,args,commandId},{clientId:'question-browser',session:sid,origin:'ui'});
  try{
   provider=make();const question=(await invoke('question.create',{prompt:'Which color?',required:true,dependency:'Paint selection'},'create-accepted')).result;
+  assert.deepEqual((await provider.readQuestionAttention(sid)).questionIds,[question.id]);
   const args={id:question.id,expectedRevision:1,text:'Blue'};const answer=(await invoke('question.answer',args,'accepted-answer')).result;
+  assert.deepEqual((await provider.readQuestionAttention(sid)).questionIds,[]);
   assert.equal(answer.delivery.status,'accepted');assert.equal((await provider.questionDependency(sid,question.id)).text,'Blue');
   assert.equal((await invoke('question.answer',args,'accepted-answer')).result.delivery.status,'accepted');assert.equal(deliveryCount,1);
   await provider.close();provider=make(true);

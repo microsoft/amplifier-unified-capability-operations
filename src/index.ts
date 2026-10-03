@@ -98,6 +98,8 @@ export class OperationsCapabilities {
  /** Only authenticated native host bridge may supply runtime identity/producer event. */
  observe=async(session:string,nativeSessionId:string,event:Json)=>{await this.options.inspectSession(session);return this.owner.request('observe',{session,nativeSessionId,event});};
  interrupted=async(session:string)=>this.owner.request('interrupted',{session});
+ /** Bounded indexed pending IDs for selected coordination; no question body materialization. */
+ readQuestionAttention=async(session:string)=>{await this.options.inspectSession(session);return this.owner.request('questionAttention',{session});};
  questionDependency=async(session:string,id:string)=>{await this.options.inspectSession(session);return this.owner.request('questionDependency',{session,id});};
  authorizeQuestionDelivery=async(session:string,args:Json)=>{await this.options.inspectSession(session);return this.owner.request('questionDelivery',{session,args});};
  authorizeObservation=async(session:string,args:Json)=>{await this.options.inspectSession(session);return this.owner.request('observationAdmission',{session,args});};

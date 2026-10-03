@@ -57,6 +57,17 @@ class Questions:
         self.db.execute('INSERT OR REPLACE INTO questions VALUES(?,?,?,?,?,?)',
             (value['id'], value['sessionId'], value['status'], value['createdAt'], (value.get('delivery') or {}).get('status'), raw))
 
+    def attention(self, sid):
+        """Selected indexed attention IDs only; never decode question bodies."""
+        rows = self.db.execute(
+            "SELECT id FROM questions WHERE session=? AND status='pending' ORDER BY created,id LIMIT 65",
+            (sid,),
+        ).fetchall()
+        complete = len(rows) <= 64
+        return {'questionIds': [row['id'] for row in rows[:64]],
+                'questionsComplete': complete,
+                'attentionCoverage': {'questions': True, 'questionsTruncated': not complete}}
+
     def page(self, sid, args):
         limit, offset = args.get('limit', 25), args.get('offset', 0)
         if type(limit) is not int or not 1 <= limit <= 50 or type(offset) is not int or not 0 <= offset <= 1000:

@@ -154,3 +154,9 @@ immutable history database. Source-host plus transfer-ID namespaces distinguish
 original IDs. Import never inserts into scheduler, question-delivery, operation
 control, or observation outbox tables. Unknown source outcomes remain unknown.
 Reads return selected bounded pages; history confers no execution authority.
+
+`readQuestionAttention(session)` exposes at most 64 pending question IDs from a
+covering disk index for a selected coordination wait. It never loads question
+bodies or starts native work. `questionsComplete` and `questionsTruncated` make
+overflow explicit; a truncated or unavailable owner is not evidence of no
+attention. Composition combines this with actual host approvals and task state.

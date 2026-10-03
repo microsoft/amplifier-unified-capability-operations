@@ -151,3 +151,24 @@ async def test_large_complete_questions_use_byte_bound_cursor_without_skipping(t
             if not cursor:break
         assert len(seen)==len(set(seen))==20
     finally:owner.close()
+
+
+def test_attention_reads_only_selected_indexed_ids_with_explicit_overflow(tmp_path):
+    owner, *_ = setup(tmp_path)
+    try:
+        # Invalid body JSON demonstrates that this read never hydrates records.
+        with owner.db:
+            owner.db.executemany('INSERT INTO questions VALUES(?,?,?,?,?,?)',
+                [(f'outside-{i}', 'ahp-session:/other', 'pending', i, None, 'not JSON') for i in range(25000)]
+                + [(f'own-{i:03}', SID, 'pending', i, None, 'not JSON') for i in range(65)]
+                + [('answered', SID, 'answered', 1, None, 'not JSON')])
+        result = owner.attention(SID)
+        assert result['questionIds'] == [f'own-{i:03}' for i in range(64)]
+        assert not result['questionsComplete'] and result['attentionCoverage']['questionsTruncated']
+        plan = ' '.join(str(tuple(row)) for row in owner.db.execute(
+            "EXPLAIN QUERY PLAN SELECT id FROM questions WHERE session=? AND status='pending' ORDER BY created,id LIMIT 65", (SID,)))
+        assert 'COVERING INDEX questions_status' in plan and 'SCAN questions' not in plan
+        with owner.db: owner.db.execute('DELETE FROM questions WHERE id=?', ('own-064',))
+        assert owner.attention(SID)['questionsComplete']
+        assert owner.attention('ahp-session:/absent')['questionIds'] == []
+    finally: owner.close()
