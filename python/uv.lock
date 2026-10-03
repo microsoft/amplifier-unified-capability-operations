@@ -9,8 +9,8 @@ source = { git = "https://github.com/microsoft/amplifier-foundation?subdirectory
 
 [[package]]
 name = "amplifier-portability"
-version = "0.1.0"
-source = { git = "https://github.com/microsoft/amplifier-portability?branch=main#25bc91cfd0731c1b53b87f5171f380a8035620a5" }
+version = "0.1.2"
+source = { git = "https://github.com/microsoft/amplifier-portability?branch=main#e2e0c529ea439e76cdbb3411b6b166001594dd52" }
 dependencies = [
     { name = "amplifier-worktrees" },
     { name = "cryptography" },
