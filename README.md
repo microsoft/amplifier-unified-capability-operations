@@ -241,3 +241,26 @@ No service stop, platform process signaling, authenticated supervisor, or remote
 provider safety is implemented by this participant itself.
 
 The private Python owner advertises this support only when the installed optional Foundation `DurableIntakeFence.SERVICE_STOP_VERSION` is 1. The Node bridge negotiates it before acquisition; an older library is a known refusal. The lock tracks current actions, scheduler work and detached owned jobs, not historical uncertain receipts alone. Foundation remains an optional library dependency and is not imported by generic host code.
+
+
+## Held retention inspection
+
+The actual quiescence participant advertises `retentionHide: {version: 1}`.
+Acquire it with purpose `retention-hide` and the exact coordinator fence context.
+The returned live lease exposes
+`inspectRetentionReferences({sessions: ["ahp-session:/..."], limit: 101})`.
+The family must contain 1–101 distinct explicit session URIs. The result is
+`{coverage: "complete" | "partial", protected: [{session, reasons}], omissions}`.
+Only the original held lease can inspect; release, uncertainty or replacement
+invalidates that authority. Release reconciliation requires the same authenticated
+coordinator proof and never retries effects. A pre-effect admission rollback is
+allowed only on the original live lease. The purpose grants no mutation rights.
+
+Inspection reads bounded indexed owner metadata while intake remains closed.
+It never starts a native worker, scans canonical histories, deletes product records,
+or interprets absence of a runtime as absence of deferred work. `complete` describes
+this owner's reference coverage, not permission to hide or delete a conversation.
+The coordinator must hold every configured owner, check all results, and use the
+native history owner's separate preservation-first hide boundary.
+
+Future or paused schedules, unresolved scheduled admissions, required unanswered questions, uncertain answer delivery, unfinished operations, watches and pending observation delivery protect their explicit conversations. These are indexed reads; no due work is run to determine eligibility.
