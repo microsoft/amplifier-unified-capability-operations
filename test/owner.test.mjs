@@ -19,6 +19,10 @@ test('real Python owner protocol: scoped schedule review, process receipts and b
   const preview=(await invoke('schedule.preview',args)).result;
   const created=await invoke('schedule.create',{...args,expectedRevision:0,previewHash:preview.previewHash});assert.equal(created.result.schedule.status,'active');assert.equal(created.updates[0].data.schedules[sid].length,1);
   const callsBeforeReceipt=calls.length,recovered=await invoke('schedule.request',{requestId:'schedule.create'},'inspect-created');assert.deepEqual(recovered.result.receipt.result,created.result);assert.deepEqual(recovered.updates,[]);assert.equal(calls.length,callsBeforeReceipt);
+  const stale=await invoke('schedule.update',{...args,id:created.result.schedule.id,expectedRevision:0,previewHash:preview.previewHash},'stale');assert.equal(stale.accepted,false);assert.equal(stale.result.executed,false);assert.deepEqual(stale.updates,[]);
+  assert.equal((await invoke('schedule.request',{requestId:'stale'},'inspect-stale')).result.receipt,null);
+  const invalid=await invoke('schedule.create',{},'invalid');assert.equal(invalid.accepted,false);assert.equal(invalid.result.executed,false);
+  assert.equal((await invoke('schedule.list',{},'unchanged')).result.items.length,1);
   const receipt=await invoke('operations.submit',{requestId:'request1',command:'fixture only'});assert.equal(receipt.result.state,'accepted');
   const again=await invoke('operations.submit',{requestId:'request1',command:'fixture only'},'duplicate');assert.equal(again.result.operationId,'process1');assert.equal(calls.filter(c=>c.op==='operations.submit').length,1);
   await assert.rejects(invoke('operations.submit',{sessionId:'ahp-session:/elsewhere',requestId:'bad',command:'denied'}),/trusted context/);

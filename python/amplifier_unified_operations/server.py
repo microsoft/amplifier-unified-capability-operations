@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 import sys
 from filelock import FileLock
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator,ValidationError
+from .errors import ScheduleRefused
 from .transfer import TransferEvidence
 from .scheduler import Scheduler
 from .operations import Operations
@@ -90,12 +91,16 @@ class Owner:
             if not definition:raise ValueError('Unknown action')
             args=params.get('args',{});sid=params['session']
             if args.get('sessionId',sid)!=sid:raise ValueError('Session argument does not match trusted context')
-            args={**args,'sessionId':sid};Draft202012Validator(definition['schema']).validate(args)
+            args={**args,'sessionId':sid}
+            try:Draft202012Validator(definition['schema']).validate(args)
+            except ValidationError as error:
+                if name.startswith('schedule.'):raise ScheduleRefused(error.message) from error
+                raise
             origin=params.get('origin','ui')
             if origin not in {'ui','agent'}:raise ValueError('Untrusted action origin')
             if name.startswith('schedule.'):
                 command=params.get('commandId')
-                if not isinstance(command,str) or not 1<=len(command)<=200:raise ValueError('Stable commandId required')
+                if not isinstance(command,str) or not 1<=len(command)<=200:raise ScheduleRefused('Stable commandId required')
                 return await self.schedules.dispatch(name,args,origin,command)
             if name.startswith('question.'):
                 return await self.questions.dispatch(name,args,origin,params.get('clientId'),params.get('commandId'))
@@ -130,7 +135,7 @@ class Peer:
                 else:future.set_result(row.get('result'))
             return
         try:result=await self.owner.request(row['method'],row.get('params',{}));await self.write({'jsonrpc':'2.0','id':identity,'result':result})
-        except Exception as exc:await self.write({'jsonrpc':'2.0','id':identity,'error':{'code':-32000,'message':str(exc)[:2000]}})
+        except Exception as exc:await self.write({'jsonrpc':'2.0','id':identity,'error':{'code':-32000,'message':str(exc)[:2000],**({'data':{'kind':'schedule_refused','executed':False}} if isinstance(exc,ScheduleRefused) else {})}})
     async def run(self):
         reader=asyncio.StreamReader(limit=MAX_FRAME+1);protocol=asyncio.StreamReaderProtocol(reader)
         transport,_=await asyncio.get_running_loop().connect_read_pipe(lambda:protocol,sys.stdin)

@@ -49,7 +49,7 @@ export class OwnerConnection {
    try{if(!String(row.method).startsWith('host/')||!METHODS.has(method))throw Error('Unknown host callback');const result=await this.callback(method,row.params??{});this.write({jsonrpc:'2.0',id:row.id,result:result??null});}
    catch(error){if(!this.closed)this.write({jsonrpc:'2.0',id:row.id,error:{code:-32000,message:String(error instanceof Error?error.message:error)}});}return;
   }
-  const entry=this.pending.get(row.id);if(!entry)return;this.pending.delete(row.id);row.error?entry.reject(Error(row.error.message)):entry.resolve(row.result);
+  const entry=this.pending.get(row.id);if(!entry)return;this.pending.delete(row.id);row.error?entry.reject(Object.assign(Error(row.error.message),{refusal:row.error.data?.kind==='schedule_refused'&&row.error.data?.executed===false})):entry.resolve(row.result);
  }
  private send(method:string,params:Json){if(this.pending.size>=64)throw Error('Owner request capacity reached');const id=++this.next;return new Promise<any>((resolve,reject)=>{this.pending.set(id,{resolve,reject});try{this.write({jsonrpc:'2.0',id,method,params});}catch(e){this.pending.delete(id);reject(e as Error);}});}
  async request(method:string,args:Json){await this.start();return this.send(method,args);}
@@ -91,7 +91,9 @@ export class OperationsCapabilities {
  read=async(request:{uri:string;topic:string;scope:string;clientId:string})=>{if(!(request.topic in names))throw Error('Unknown operation topic');await this.authorize(request.scope,{clientId:request.clientId});return this.record(request.topic,request.scope,await this.owner.request('snapshot',{session:request.scope,topic:request.topic}));};
  action=async(request:Json,context:Context)=>{
   const scope=request.channel,advertised=this.manifest.actions[request.operation];if(request.version!==1||!advertised||advertised.topic!==request.topic)throw Error('Unadvertised operation action');await this.authorize(scope,context);
-  const result=await this.owner.request('action',{session:scope,operation:request.operation,args:request.args??{},origin:context.origin??'ui',clientId:context.clientId,commandId:request.commandId});
+  let result:Json;
+  try{result=await this.owner.request('action',{session:scope,operation:request.operation,args:request.args??{},origin:context.origin??'ui',clientId:context.clientId,commandId:request.commandId});}
+  catch(error){if(request.operation.startsWith('schedule.')&&(error as Error&{refusal?:boolean}).refusal)return {accepted:false,result:{executed:false,reason:(error as Error).message},updates:[],invalidate:[]};throw error;}
   const read=/\.(list|read|wait|status|request|preview|report|observers)$/.test(request.operation);
   return {accepted:true,result,updates:read?[]:[this.record(request.topic,scope,await this.owner.request('snapshot',{session:scope,topic:request.topic}))],invalidate:[],_meta:{'amplifier.dev/operation':{id:request.commandId}}};
  };

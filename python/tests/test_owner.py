@@ -76,6 +76,19 @@ async def test_lost_schedule_response_recovers_exact_committed_result_without_ne
     other=await owner.request('action',{'session':'ahp-session:/other','operation':'schedule.request','args':{'requestId':'command'},'commandId':'inspect','origin':'ui'})
     assert other['receipt'] is None
 
+async def test_schedule_refusal_is_distinct_from_errors_after_commit(owned):
+    from amplifier_unified_operations.errors import ScheduleRefused
+    owner,host,now,_=owned;args=schedule_args()
+    with pytest.raises(ScheduleRefused,match='preview'):
+        await action(owner,'schedule.create',{**args,'expectedRevision':0,'previewHash':'stale'},command='stale')
+    assert (await action(owner,'schedule.request',{'requestId':'stale'}))['receipt'] is None
+    with pytest.raises(ScheduleRefused):await action(owner,'schedule.create',{},command='invalid')
+    async def dropped(_):raise ValueError('Response could not be published')
+    owner.schedules.changed=dropped
+    with pytest.raises(ValueError) as error:await create(owner)
+    assert not isinstance(error.value,ScheduleRefused)
+    assert (await action(owner,'schedule.request',{'requestId':'command'}))['receipt']['status']=='committed'
+
 async def test_review_cas_agent_provenance_and_stop_intent(owned):
     owner,host,now,_=owned;args=schedule_args();preview=await action(owner,'schedule.preview',args)
     host.source['inputOrigin']='scheduler'

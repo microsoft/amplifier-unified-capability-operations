@@ -168,4 +168,9 @@ the exact saved schedule/run result, even after later edits. Inspection does
 not invoke native callbacks, start work or publish a new schedule snapshot.
 Clients retain their pending intent privately and inspect without reissuing a
 create/update. A missing receipt alone does not prove upstream admission failed.
+Schedule schema/review validation and rolled-back Foundation mutations return a
+typed known refusal (`accepted:false`, `executed:false`). Response publication
+errors after a successful commit remain unknown and recover through the original
+owner receipt. A client may settle a missing owner receipt only with an exact
+scoped terminal failed host receipt; it never repeats the original command.
 This uses Foundation scheduling's public `command_receipt` API.

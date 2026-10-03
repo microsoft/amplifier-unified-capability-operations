@@ -6,6 +6,7 @@ import time
 import uuid
 from amplifier_scheduling import ScheduleStore,normalize,next_after,preview
 from amplifier_scheduling.store import fingerprint
+from .errors import schedule_validation
 
 class Scheduler:
     def __init__(self,path,host,changed,clock=time.time):
@@ -56,13 +57,14 @@ class Scheduler:
             page=self.store.run_page(owner,args['id'],limit=args.get('limit',25),before=args.get('cursor'))
             return {'schedule':schedule,'runs':page['items'],'nextCursor':page['nextCursor'],'readOnly':owner!=sid}
         if action in {'schedule.report','schedule.reconcile'}:return await self.run_command(action,args,origin,command)
-        config=self.configuration(args) if action in {'schedule.preview','schedule.create','schedule.update'} else None
-        previous=self.store.get(sid,args['id']) if args.get('id') else None
-        if action=='schedule.resume':config=self.configuration(previous)
-        task=await self.task(sid,config) if config else None
-        review=await self.reviewed(sid,config,task) if config else None
-        if action=='schedule.preview':return review
-        provenance=await self.authorization(sid,args,origin,previous) if config else None
+        with schedule_validation():
+            config=self.configuration(args) if action in {'schedule.preview','schedule.create','schedule.update'} else None
+            previous=self.store.get(sid,args['id']) if args.get('id') else None
+            if action=='schedule.resume':config=self.configuration(previous)
+            task=await self.task(sid,config) if config else None
+            review=await self.reviewed(sid,config,task) if config else None
+            if action=='schedule.preview':return review
+            provenance=await self.authorization(sid,args,origin,previous) if config else None
         def build(old):
             now=self.clock()
             if action=='schedule.create':
@@ -82,11 +84,13 @@ class Scheduler:
             elif action=='schedule.cancel':record['status']='cancelled'
             else:raise ValueError('Unknown schedule action')
             record['updatedAt']=now;return record
-        result=self.store.mutate(action,{**args,'authorizationOrigin':origin},command,build)
+        with schedule_validation():result=self.store.mutate(action,{**args,'authorizationOrigin':origin},command,build)
         await self.changed(sid);return result
     async def run_command(self,action,args,origin,command):
-        sid=args['sessionId'];now=self.clock();run=self.store.execution_run(sid,args['runId'])
-        provenance=await self.authorization(sid,args,origin) if action=='schedule.reconcile' else None
+        sid=args['sessionId'];now=self.clock()
+        with schedule_validation():
+            run=self.store.execution_run(sid,args['runId'])
+            provenance=await self.authorization(sid,args,origin) if action=='schedule.reconcile' else None
         def edit(row):
             if action=='schedule.report':
                 if row['phase'] not in {'submitting','accepted','running'}:raise ValueError('Only an admitted current run can report evidence')
@@ -99,7 +103,7 @@ class Scheduler:
                 if origin!='ui' and provenance.get('messageCreatedAt',0)<row['createdAt']:raise ValueError('Reconciliation requires a finding after the run')
                 row.update(phase=args['resolution'],reconciliation={'evidence':args['evidence'],'provenance':provenance,'at':now},detail='Explicit reconciliation; input not replayed.')
             row['updatedAt']=now
-        result=self.store.run_command(run['sessionId'],run['id'],args['expectedRevision'],command,fingerprint([action,args,origin]),edit)
+        with schedule_validation():result=self.store.run_command(run['sessionId'],run['id'],args['expectedRevision'],command,fingerprint([action,args,origin]),edit)
         await self.changed(run['sessionId']);return result
     async def dependency(self,session,task,schedule):
         for key in ('interruptionRevision','executionRevision','configurationHash'):
