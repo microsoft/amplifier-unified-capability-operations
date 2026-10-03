@@ -7,6 +7,14 @@ def definitions(schema, string):
         "maxBytes": {"type": "integer", "minimum": 4096, "maximum": 100000},
     }
     return {
+        "operations.history.list": (
+            "Page explicitly imported legacy evidence for this conversation. Historical states never run work or grant process control.",
+            schema({"sessionId": string(8192), "kind": {"enum": ["schedule","schedule-run","operation","operation-request","question","observer","watch","run","outbox"]}, "cursor": string(24000), "limit": {"type":"integer","minimum":1,"maximum":50}}, ["sessionId"]),
+        ),
+        "operations.history.read": (
+            "Read one immutable selected legacy record. Its active or pending source status is historical only; nothing is resumed or answered.",
+            schema({"sessionId": string(8192), "id": {"type":"string","pattern":"^[a-f0-9]{64}$"}}, ["sessionId","id"]),
+        ),
         "operations.submit": (
             "Start an owned command through the existing shell approval path. Keep requestId stable when retrying; unknown requests never replay. questionIds binds only work depending on those exact answers.",
             schema({"sessionId": string(200), "requestId": string(200), "command": string(65536),

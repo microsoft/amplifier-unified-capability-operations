@@ -173,4 +173,26 @@ typed known refusal (`accepted:false`, `executed:false`). Response publication
 errors after a successful commit remain unknown and recover through the original
 owner receipt. A client may settle a missing owner receipt only with an exact
 scoped terminal failed host receipt; it never repeats the original command.
+
+## Retained legacy evidence
+
+The explicit offline `python -I -m amplifier_unified_operations.migrate` command
+accepts `--source` (a retained SQLite database), `--destination` (the independent
+owner directory), `--source-session`, `--session` (the reviewed AHP mapping),
+`--kind`, and optional `--after`/`--limit`. It refuses a running destination owner.
+Only selected-session records are read, in pages of at most 50; each record is
+bounded before hydration. Original source bytes are never changed. Conflicting
+identity mappings, malformed and oversized rows remain classified and retained.
+
+Imported schedule/run, operation/request, question and observation records are
+immutable history, exposed through `operations.history.list/read`. They are never
+inserted into active stores. Source active/pending/unknown states cannot resume a
+schedule, deliver an answer, recreate a process or confer tool authority. Process
+output chunks, event journals, opaque unscoped receipts and unscopable malformed
+observation rows remain in the source and are explicit omissions. No host startup
+import or automatic legacy work replay is supported.
+
+Schedule preview optionally supplies a bounded trusted `destinationSummary`
+(engine and workspace). The reviewed configuration hash remains an admission
+guard; raw provider credentials or private configuration are not exposed.
 This uses Foundation scheduling's public `command_receipt` API.

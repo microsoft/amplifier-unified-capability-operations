@@ -7,6 +7,7 @@ import sys
 from filelock import FileLock
 from jsonschema import Draft202012Validator,ValidationError
 from .errors import ScheduleRefused
+from .history import HistoricalRecords
 from .transfer import TransferEvidence
 from .scheduler import Scheduler
 from .operations import Operations
@@ -36,6 +37,7 @@ class Owner:
         root=Path(config['dataDir']).expanduser().resolve();root.mkdir(parents=True,exist_ok=True,mode=0o700)
         self.lease=FileLock(str(root/'owner.lock'));self.lease.acquire(timeout=0)
         self.host=host;self.notify=notify;self.schemas=definitions();self.revisions={};self.tick_task=None;self.closed=False
+        self.root=root;self._historical=None
         self.questions=Questions(root/'questions.sqlite3',host,lambda sid:self.changed(sid,'questions'))
         self.schedules=Scheduler(root/'schedules.sqlite3',self.callback,lambda sid:self.changed(sid,'schedules'))
         self.operations=Operations(root/'operations.sqlite3',self.callback,lambda sid:self.changed(sid,'operations'))
@@ -102,6 +104,9 @@ class Owner:
                 command=params.get('commandId')
                 if not isinstance(command,str) or not 1<=len(command)<=200:raise ScheduleRefused('Stable commandId required')
                 return await self.schedules.dispatch(name,args,origin,command)
+            if name.startswith('operations.history.'):
+                if self._historical is None:self._historical=HistoricalRecords(self.root/'legacy.sqlite3')
+                return self._historical.page(sid,args) if name=='operations.history.list' else self._historical.read(sid,args['id'])
             if name.startswith('question.'):
                 return await self.questions.dispatch(name,args,origin,params.get('clientId'),params.get('commandId'))
             if name.startswith('observation.'):
@@ -111,7 +116,9 @@ class Owner:
     async def close(self):
         self.closed=True
         if self.tick_task:self.tick_task.cancel();await asyncio.gather(self.tick_task,return_exceptions=True)
-        await self.observations.close();await self.schedules.close();await self.operations.close();self.questions.close();self.transfer.close();self.lease.release()
+        await self.observations.close();await self.schedules.close();await self.operations.close();self.questions.close();self.transfer.close()
+        if self._historical:self._historical.close()
+        self.lease.release()
 
 class Peer:
     def __init__(self,config):self.pending={};self.counter=0;self.tasks=set();self.closing=False;self.owner=Owner(config,self.host,self.notify)

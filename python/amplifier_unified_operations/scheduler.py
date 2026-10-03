@@ -27,7 +27,9 @@ class Scheduler:
         binding={'sessionId':sid,'taskId':task['id'] if task else None,'taskRevision':task['revision'] if task else None,
             'interruptionRevision':session['interruptionRevision'],'executionRevision':session['executionRevision'],
             'configurationHash':session['configurationHash'],**config}
-        return {'previewHash':fingerprint(binding),'binding':binding,'occurrences':preview(config['spec'],self.clock(),5),
+        destination={'engineId':session.get('engineId'),'workspace':session.get('executionDirectory') or session.get('workingDirectory')}
+        destination={key:value for key,value in destination.items() if isinstance(value,str) and len(value)<=8192}
+        return {'previewHash':fingerprint(binding),'binding':binding,'destinationSummary':destination,'occurrences':preview(config['spec'],self.clock(),5),
             'daylightSaving':'Nonexistent local times are skipped; repeated local times run once at the first occurrence.',
             'missedRunPolicy':config['missedRunPolicy'],'notificationPolicy':config['notificationPolicy']}
     async def authorization(self,sid,args,origin,previous=None):
