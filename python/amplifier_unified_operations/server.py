@@ -81,6 +81,7 @@ class Owner:
             await asyncio.sleep(2)
     async def request(self,method,params):
         if method=='quiescence.retention':return self.retention.read(params)
+        if method=='quiescence.managedFiles':return self.retention.read(params,managed=True)
         if method=='quiescence.acquire':
             if params.get('purpose')=='service-stop' and getattr(self.intake,'SERVICE_STOP_VERSION',0)!=1:return {'acquired':False,'executed':False,'reason':'service-stop-unavailable'}
             value=self.intake.acquire(params,pending=len(self.schedules.pending)+len(self.observations.tasks))
@@ -104,7 +105,7 @@ class Owner:
     async def _request(self,method,params):
         if method in {'exportTransferEvidence','stageTransferEvidence','activateTransferEvidence','readTransferEvidence'}:
             return getattr(self.transfer,{'exportTransferEvidence':'export','stageTransferEvidence':'stage','activateTransferEvidence':'activate','readTransferEvidence':'read'}[method])(params)
-        if method=='initialize':return {'protocolVersion':1,'scheduledAdmission':'host','quiescence':{'version':1,'retentionHide':{'version':1},**({'serviceStop':{'version':1}} if getattr(self.intake,'SERVICE_STOP_VERSION',0)==1 else {})},'actions':list(self.schemas)}
+        if method=='initialize':return {'protocolVersion':1,'scheduledAdmission':'host','quiescence':{'version':1,'retentionHide':{'version':1},'managedFiles':{'version':1,'preservesCanonical':True},**({'serviceStop':{'version':1}} if getattr(self.intake,'SERVICE_STOP_VERSION',0)==1 else {})},'actions':list(self.schemas)}
         if method=='actions':return self.schemas
         if method=='start':self.observations_enabled=params.get('observations') is True;self.start();return {'started':True}
         if method=='observe':return await self.operations.observe(params['session'],params['nativeSessionId'],params['event'])

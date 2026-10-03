@@ -264,3 +264,21 @@ The coordinator must hold every configured owner, check all results, and use the
 native history owner's separate preservation-first hide boundary.
 
 Future or paused schedules, unresolved scheduled admissions, required unanswered questions, uncertain answer delivery, unfinished operations, watches and pending observation delivery protect their explicit conversations. These are indexed reads; no due work is run to determine eligibility.
+
+## Managed-file disposal protection
+
+`quiescenceParticipant.managedFiles = {version: 1, preservesCanonical: true}` is a separate contract from `retentionHide`. It holds the real owner intake with purpose `managed-files-disposal`, preserving every owner record. The acquired lease exposes:
+
+```ts
+inspectManagedFilesReferences({
+  sessions: [rootSession, ...descendants], // explicit AHP URIs, at most 101
+  limit: 101,
+  allocation: {allocationId, executionDirectory, allocationHash, treeHash, entryCount, bytes}
+}) // {coverage: 'complete' | 'partial', protected: [{session, reasons}], omissions: [...] }
+```
+
+The allocation comes from the trusted host's native-reviewed managed allocation, never a browser path. It is bound with the exact selected family on the first inspection of the live lease; a different review is refused. This read does not grant file deletion. The coordinator must bind release to its exact durable managed-files effect receipt, keep unknown fences held, and refuse partial/protected coverage. Lease inspectors expire before release begins, including unknown release; admission-refused rollback is available only on the original live lease. Restart reconciliation requires the existing exact verified release proof.
+
+Future active/paused/review-needed schedules, active schedule admissions, required unanswered questions, answer delivery, uncertain operations and observation watches/outboxes protect selected conversations. Completed process output is stored by canonical native/operation owners, not lazily read from the execution directory. No task is started to inspect references.
+
+Inspection uses bounded selected metadata or indexed overlap probes, not native transcripts, a global history projection, or worker/model startup. Existing retention-hide and service-stop lifecycles are unchanged. The package tests cover the independently installed owner transport and held/unknown/exact-release behavior; full host/native/browser disposal acceptance remains a composition responsibility.

@@ -1,3 +1,4 @@
+import {managedParticipant} from './managed-files.js';
 import {retentionRequest,retentionParticipant} from './retention.js';
 import {serviceIdentity,validateServiceRelease,type ServiceIdentity,type ServiceReleaseFields} from './service-lifecycle.js';
 export type {ServiceIdentity,ServiceReleaseFields} from './service-lifecycle.js';
@@ -60,7 +61,7 @@ export class OwnerConnection {
  async request(method:string,args:Json){await this.start();return this.send(method,args);}
  async close(){if(!this.process){this.closed=true;return;}this.process.stdin.end();await new Promise<void>(resolve=>{const timer=setTimeout(()=>{this.process?.kill();resolve();},4000);this.process!.once('exit',()=>{clearTimeout(timer);resolve();});});this.fail('Owner closed');}
 }
-export interface QuiescenceContext {fenceId:string;commandId:string;purpose:'distribution-update'|'recovery'|'service-stop'|'retention-hide';instanceId:string;dataScope:string;serviceIdentity?:ServiceIdentity;}
+export interface QuiescenceContext {fenceId:string;commandId:string;purpose:'distribution-update'|'recovery'|'service-stop'|'retention-hide'|'managed-files-disposal';instanceId:string;dataScope:string;serviceIdentity?:ServiceIdentity;}
 export interface QuiescenceProof extends Partial<ServiceReleaseFields> {verified:true;fenceId:string;commandId:string;outcome:'ready'|'unchanged';instanceId:string;dataScope:string;receiptId:string;}
 const quiescenceReads=new Set(['schedule.list','schedule.read','schedule.request','operations.list','operations.status','operations.read','operations.wait','operations.request','operations.history.list','operations.history.read','question.list','question.read','observation.observers','observation.request','observation.list','observation.read','observation.report']);
 export class OperationsCapabilities {
@@ -127,12 +128,12 @@ export class OperationsCapabilities {
    const result=await this.owner.request('quiescence.release',{...context,outcome,proof});
    if(outcome!=='unknown'&&result.released!==true)throw Error('Owner intake release is not confirmed');
   };
-  return retentionParticipant({id:ownerId,serviceStop:{version:1 as const},acquire:async(context:Readonly<QuiescenceContext>)=>{
+  return managedParticipant(retentionParticipant({id:ownerId,serviceStop:{version:1 as const},acquire:async(context:Readonly<QuiescenceContext>)=>{
    const exact:QuiescenceContext=structuredClone(context);if(exact.purpose==='retention-hide'&&(await this.owner.request('initialize',{})).quiescence?.retentionHide?.version!==1)return null;if(exact.purpose==='service-stop'){exact.serviceIdentity=serviceIdentity(exact.serviceIdentity);if(exact.serviceIdentity.instanceId!==exact.instanceId||exact.serviceIdentity.dataScope!==exact.dataScope)throw Error('Service identity differs from operation context');const hello=await this.owner.request('initialize',{});if(hello.quiescence?.serviceStop?.version!==1)return null;}const result=await this.owner.request('quiescence.acquire',exact);
    if(result.acquired!==true)return null;
    if(result.fenceId!==exact.fenceId||result.intakeClosed!==true)throw Error('Owner intake acquisition is not confirmed');
    return {ownerId,fenceId:exact.fenceId,inspectRetentionReferences:(args:any)=>this.owner.request('quiescence.retention',retentionRequest(exact,args)),release:(outcome:'ready'|'unchanged'|'unknown',proof?:QuiescenceProof|{kind:'admission-refused'})=>release(exact,outcome,proof)};
-  },reconcileRelease:async(context:Readonly<QuiescenceContext>&{outcome:'ready'|'unchanged';proof:QuiescenceProof})=>{if(context.purpose==='service-stop')validateServiceRelease(context,context.outcome,context.proof);return release(context,context.outcome,context.proof);}},args=>this.owner.request('quiescence.retention',args));
+  },reconcileRelease:async(context:Readonly<QuiescenceContext>&{outcome:'ready'|'unchanged';proof:QuiescenceProof})=>{if(context.purpose==='service-stop')validateServiceRelease(context,context.outcome,context.proof);return release(context,context.outcome,context.proof);}},args=>this.owner.request('quiescence.retention',args)),args=>this.owner.request('quiescence.managedFiles',args),async()=>(await this.owner.request('initialize',{})).quiescence?.managedFiles?.version===1);
  }
  close=async()=>this.owner.close();
 }
