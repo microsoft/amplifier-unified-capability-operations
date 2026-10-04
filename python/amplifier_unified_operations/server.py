@@ -89,7 +89,7 @@ class Owner:
         if method=='quiescence.snapshot':return self.snapshots.capture(params)
         if method=='quiescence.abortAdmission':
             result=self.intake.abort_admission(params,owner_id=params['ownerId'],pending=len(self.schedules.pending)+len(self.observations.tasks))
-            self.snapshot_live=None
+            if self.intake.fence is None:self.snapshot_live=None
             return result
         if method=='quiescence.admissionAbortReceipt':return self.intake.admission_abort_receipt(params,owner_id=params['ownerId'])
         if method=='quiescence.acquire':
