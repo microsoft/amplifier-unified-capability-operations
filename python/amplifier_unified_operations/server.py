@@ -49,6 +49,13 @@ class Owner:
         self.observations=Observations(root/'observations.sqlite3',self.callback,lambda sid:self.changed(sid,'observations'));self.observations_enabled=False
         self.transfer=TransferEvidence(root/'transfer.sqlite3',self)
         self.retention=References(self)
+    async def notify_counted(self, *args):
+        self.intake.background += 1
+        try:
+            return await self.notify(*args)
+        finally:
+            self.intake.background -= 1
+
     async def callback(self,method,args):
         if method=='questionDependency':return self.questions.dependency(args['session'],args['id'])
         if method=='operationSources':
@@ -61,13 +68,13 @@ class Owner:
         # This map is presentation-only and capped; authoritative revision stays on disk.
         self.revisions.pop(sid,None);self.revisions[sid]=0
         while len(self.revisions)>128:self.revisions.pop(next(iter(self.revisions)))
-        await self.notify('owner/changed',{'session':sid,'topic':topic})
+        await self.notify_counted('owner/changed',{'session':sid,'topic':topic})
     def start(self):
         if self.tick_task is None:self.tick_task=asyncio.create_task(self.loop())
     async def maybe_idle(self):
         if self.awaiting_idle and not self.closed and not self.intake.calls and not self.intake.background and not self.schedules.pending and not self.observations.tasks:
             self.awaiting_idle=False
-            await self.notify('owner/idle',{})
+            await self.notify_counted('owner/idle',{})
     async def loop(self):
         while not self.closed:
             if not self.intake.fence:
