@@ -282,3 +282,35 @@ The allocation comes from the trusted host's native-reviewed managed allocation,
 Future active/paused/review-needed schedules, active schedule admissions, required unanswered questions, answer delivery, uncertain operations and observation watches/outboxes protect selected conversations. Completed process output is stored by canonical native/operation owners, not lazily read from the execution directory. No task is started to inspect references.
 
 Inspection uses bounded selected metadata or indexed overlap probes, not native transcripts, a global history projection, or worker/model startup. Existing retention-hide and service-stop lifecycles are unchanged. The package tests cover the independently installed owner transport and held/unknown/exact-release behavior; full host/native/browser disposal acceptance remains a composition responsibility.
+
+### Trusted Operations-store recovery images
+
+A freshly acquired recovery lease may expose `captureSnapshot({commandId,
+privateContentReviewed: true})` when the installed optional Foundation Operations
+library advertises snapshot version 1. The coordinator must authenticate the
+caller and review private-content inclusion. Retained fences after restart never
+grant a fresh snapshot lease, and releasing a lease retires its capture authority.
+This hook composes with the existing product archive/recovery coordinator; it is
+not a separate backup action or an activation API.
+
+Capture covers exactly `intake`, `schedules`, `operations`, `questions`,
+`observations`, `transfer` and optional `legacy` SQLite stores. Writers, scheduled
+admission and observation work remain held for the complete set. Unknown storage
+in the owner root refuses capture. Committed WAL content becomes sealed SQLite
+images; the original database/WAL bytes and canonical history remain preserved.
+Images total at most 64 MiB and capture has a thirty-second deadline. Original
+commands retain an unknown receipt before any image effect, and exact retries
+inspect that receipt without repeating capture. Completed receipts identify each
+image, missing stores and the manifest digest.
+
+Trusted composition can use `inspectOwnerSnapshot(commandId)` and bounded
+`readOwnerSnapshot({commandId,store,offset,limit})` windows (at most 64 KiB).
+`amplifier_unified_operations.snapshots.restore_inactive` requires the exact seven
+store census, an authenticated reviewed manifest digest and a caller-held guard;
+it restores into a new inactive destination without overwriting source state or
+starting work. The original intake fence and unknown outcomes remain durable.
+A hash alone does not authenticate an archive. Complete product backup/restore
+remains false until the product coordinator also accounts for canonical native
+history, external process authority, retained snapshot artifacts, every other
+owner, and the complete signed runtime-code graph. No external-root discovery,
+new process activation, TTL fence release or replay is provided here.

@@ -1,0 +1,55 @@
+{
+  "scope": "Trusted existing archive coordinator incremental Operations store capture/inactive restore port",
+  "priorComposition": "469a82a7dec3e6b7d8b65454d3aacb845c5c8253 coherent offline archive; not replaced",
+  "ownerStores": [
+    "intake",
+    "schedules",
+    "operations",
+    "questions",
+    "observations",
+    "transfer",
+    "legacy"
+  ],
+  "foundationSnapshotApiVersion": 1,
+  "sourcePython": {
+    "passed": 56,
+    "failed": 0,
+    "skipped": 0
+  },
+  "installedPython": {
+    "passed": 56,
+    "failed": 0,
+    "skipped": 0
+  },
+  "installedNodeStdio": {
+    "passed": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "python": "3.13.16",
+  "dependencyCheck": {
+    "packages": 20,
+    "compatible": true,
+    "noEditablePeers": true,
+    "explicitWheelResolver": true
+  },
+  "dependencyFix": "Includes previously qualified portability >=0.1.2,<0.2 change from1084e7a, replaces stale main==0.1.0 pin",
+  "artifacts": [
+    {
+      "path": "/Users/brkrabac/Documents/Codex/2026-10-03/unified-owner-operations-20261003/outputs/overnight-operations-recovery/foundation-candidate/amplifier_operations-0.1.0-py3-none-any.whl",
+      "sha256": "4e7827f3a492bf75d5d36d8da97f24ee2ac31457bcf37459a4e483cabfc115f2",
+      "bytes": 16165
+    },
+    {
+      "path": "/Users/brkrabac/Documents/Codex/2026-10-03/unified-owner-operations-20261003/outputs/overnight-operations-recovery/operations-candidate/amplifier_unified_operations-0.1.0-py3-none-any.whl",
+      "sha256": "45b84f4f6501b56fc148908de4ad769da66e8357d25221b081f867015e407513",
+      "bytes": 46257
+    }
+  ],
+  "acceptanceLimits": [
+    "Complete product backup/restore remains false.",
+    "Root coordinator owns authentication, private-content review, other owners, signed runtime graph and artifact sealing.",
+    "Canonical native history, external authority and retained snapshot artifacts are explicit omissions of this seven-store set.",
+    "No live host changes, source reconstruction from moving main, activation, replay or automatic fence reopening."
+  ]
+}

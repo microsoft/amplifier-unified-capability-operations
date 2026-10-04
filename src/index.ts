@@ -120,6 +120,9 @@ export class OperationsCapabilities {
  stageTransferEvidence=async(args:Json)=>this.owner.request('stageTransferEvidence',args);
  activateTransferEvidence=async(args:Json)=>this.owner.request('activateTransferEvidence',args);
  readTransferEvidence=async(args:Json)=>{await this.options.inspectSession(args.session);return this.owner.request('readTransferEvidence',args);};
+ /** Trusted archive coordinator only; inspection never retries capture or activates a restore. */
+ inspectOwnerSnapshot=(commandId:string)=>this.owner.request('snapshot.inspect',{commandId});
+ readOwnerSnapshot=(args:{commandId:string;store:string;offset:number;limit:number})=>this.owner.request('snapshot.read',args);
  /** Trusted composition only. The private Python owner closes intake durably before returning. */
  quiescenceParticipant(ownerId:string){
   if(!ownerId||ownerId.length>200)throw Error('Bounded owner identity required');
@@ -132,7 +135,8 @@ export class OperationsCapabilities {
    const exact:QuiescenceContext=structuredClone(context);if(exact.purpose==='retention-hide'&&(await this.owner.request('initialize',{})).quiescence?.retentionHide?.version!==1)return null;if(exact.purpose==='service-stop'){exact.serviceIdentity=serviceIdentity(exact.serviceIdentity);if(exact.serviceIdentity.instanceId!==exact.instanceId||exact.serviceIdentity.dataScope!==exact.dataScope)throw Error('Service identity differs from operation context');const hello=await this.owner.request('initialize',{});if(hello.quiescence?.serviceStop?.version!==1)return null;}const result=await this.owner.request('quiescence.acquire',exact);
    if(result.acquired!==true)return null;
    if(result.fenceId!==exact.fenceId||result.intakeClosed!==true)throw Error('Owner intake acquisition is not confirmed');
-   return {ownerId,fenceId:exact.fenceId,inspectRetentionReferences:(args:any)=>this.owner.request('quiescence.retention',retentionRequest(exact,args)),release:(outcome:'ready'|'unchanged'|'unknown',proof?:QuiescenceProof|{kind:'admission-refused'})=>release(exact,outcome,proof)};
+   let live=true;const snapshots=(await this.owner.request('initialize',{})).quiescence?.snapshots?.version===1;
+   return {ownerId,fenceId:exact.fenceId,...(exact.purpose==='recovery'&&snapshots?{captureSnapshot:async(args:{commandId:string;privateContentReviewed:true})=>{if(!live)throw Error('Snapshot recovery lease is no longer live');return this.owner.request('quiescence.snapshot',{...args,context:exact});}}:{}),inspectRetentionReferences:(args:any)=>this.owner.request('quiescence.retention',retentionRequest(exact,args)),release:(outcome:'ready'|'unchanged'|'unknown',proof?:QuiescenceProof|{kind:'admission-refused'})=>{live=false;return release(exact,outcome,proof);}};
   },reconcileRelease:async(context:Readonly<QuiescenceContext>&{outcome:'ready'|'unchanged';proof:QuiescenceProof})=>{if(context.purpose==='service-stop')validateServiceRelease(context,context.outcome,context.proof);return release(context,context.outcome,context.proof);}},args=>this.owner.request('quiescence.retention',args)),args=>this.owner.request('quiescence.managedFiles',args),async()=>(await this.owner.request('initialize',{})).quiescence?.managedFiles?.version===1);
  }
  close=async()=>this.owner.close();
