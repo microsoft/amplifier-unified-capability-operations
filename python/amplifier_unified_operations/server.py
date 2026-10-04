@@ -87,6 +87,11 @@ class Owner:
         if method=='snapshot.inspect':return {'receipt':self.snapshots.receipt(params.get('commandId')),'replayed':False}
         if method=='snapshot.read':return self.snapshots.read(params)
         if method=='quiescence.snapshot':return self.snapshots.capture(params)
+        if method=='quiescence.abortAdmission':
+            result=self.intake.abort_admission(params,owner_id=params['ownerId'],pending=len(self.schedules.pending)+len(self.observations.tasks))
+            self.snapshot_live=None
+            return result
+        if method=='quiescence.admissionAbortReceipt':return self.intake.admission_abort_receipt(params,owner_id=params['ownerId'])
         if method=='quiescence.acquire':
             if params.get('purpose')=='service-stop' and getattr(self.intake,'SERVICE_STOP_VERSION',0)!=1:return {'acquired':False,'executed':False,'reason':'service-stop-unavailable'}
             fresh=self.intake.fence is None
@@ -115,7 +120,7 @@ class Owner:
             return getattr(self.transfer,{'exportTransferEvidence':'export','stageTransferEvidence':'stage','activateTransferEvidence':'activate','readTransferEvidence':'read'}[method])(params)
         if method=='initialize':
             from .snapshots import support
-            return {'protocolVersion':1,'scheduledAdmission':'host','quiescence':{'version':1,'retentionHide':{'version':1},'managedFiles':{'version':1,'preservesCanonical':True},**({'snapshots':{'version':1,'coverage':'owner-sqlite-stores','activationProvided':False}} if support() else {}),**({'serviceStop':{'version':1}} if getattr(self.intake,'SERVICE_STOP_VERSION',0)==1 else {})},'actions':list(self.schemas)}
+            return {'protocolVersion':1,'scheduledAdmission':'host','quiescence':{'version':1,'retentionHide':{'version':1},'managedFiles':{'version':1,'preservesCanonical':True},**({'snapshots':{'version':1,'coverage':'owner-sqlite-stores','activationProvided':False}} if support() else {}),**({'admissionAbort':{'version':1}} if getattr(self.intake,'ADMISSION_ABORT_VERSION',0)==1 else {}),**({'serviceStop':{'version':1}} if getattr(self.intake,'SERVICE_STOP_VERSION',0)==1 else {})},'actions':list(self.schemas)}
         if method=='actions':return self.schemas
         if method=='start':self.observations_enabled=params.get('observations') is True;self.start();return {'started':True}
         if method=='observe':return await self.operations.observe(params['session'],params['nativeSessionId'],params['event'])
