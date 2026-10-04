@@ -327,3 +327,27 @@ trusted owner-private sealed namespace as Foundation capture, not protection fro
 same-user kernel tampering. Complete single-set export reads each image once for
 verification and once for its windows, rather than hashing the whole image on
 every 64 KiB page.
+
+### Retained SQLite startup authority
+
+The owner acquires its existing exclusive `owner.lock` before constructing
+question and observation stores. Questions require both `questions` and
+`question_commands`; observations require `records`, `commands`, and `terminals`.
+Bounded WAL-aware read-only schema checks precede any writable open, index
+reconstruction, legacy migration or restart normalization. Missing authority
+refuses startup without recreating command identity, terminal markers or outbox
+admission authority. Refusal preserves the main and nonempty WAL; SQLite may
+update derived SHM. Fresh initialization requires absence of the main and all
+WAL/SHM/rollback sidecars, including dangling symlinks. Only indexes are derived.
+
+The complete original observation profile without `commands.receipt` remains
+supported by its existing additive column migration, preserving original command
+identities with a NULL legacy receipt. Both its migrated schema and the current
+profile reopen normally. Historical imports remain display-only and never supply
+execution authority. These bounded schema checks do not detect erased rows or
+externally recreated complete schemas. The combined operation owner declares
+Foundation's four-table `require_requests=True` profile before journal recovery.
+
+Main and existing sidecars must be regular files without symlinks before SQLite
+is called, so retained FIFOs cannot block startup. Callers serialize storage
+lifecycle changes; this is not an adversarial VFS or path-swap guarantee.

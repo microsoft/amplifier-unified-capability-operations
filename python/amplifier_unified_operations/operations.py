@@ -8,7 +8,7 @@ from amplifier_operations.journal import ACTIVE
 
 class Operations:
     def __init__(self,path,host,changed):
-        self.journal=OperationJournal(path);self.journal.recover();self.requests=OperationRequests(self.journal)
+        self.journal=OperationJournal(path,require_requests=True);self.journal.recover();self.requests=OperationRequests(self.journal)
         self.host=host;self.changed=changed;self.event=asyncio.Event();self.closed=False
     async def notify(self,sid):
         previous=self.event;self.event=asyncio.Event();previous.set();await self.changed(sid)
