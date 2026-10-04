@@ -111,3 +111,67 @@ def test_restore_fifo_manifest_refuses_without_blocking_or_destination(tmp_path)
     result=subprocess.run([sys.executable,'-I','-B','-c',bootstrap,str(__import__('pathlib').Path(module_path).parent),str(snapshot),str(tmp_path/'inactive')],capture_output=True,text=True,timeout=2)
     assert result.returncode!=0 and 'Bounded regular Operations manifest required' in result.stderr
     assert not (tmp_path/'inactive').exists()
+
+async def test_selected_snapshot_pages_read_linear_bytes_and_close_descriptors(tmp_path,monkeypatch):
+    import amplifier_unified_operations.snapshots as module
+    owner=Owner({'dataDir':str(tmp_path/'owner')},forbidden,quiet)
+    with owner.questions.db:
+        owner.questions.db.execute('CREATE TABLE retained_fixture(value BLOB)')
+        owner.questions.db.execute('INSERT INTO retained_fixture VALUES(?)',(b'x'*512000,))
+    await owner.request('quiescence.acquire',CONTEXT)
+    result=await owner.request('quiescence.snapshot',ARGS)
+    image=owner.snapshots.directory('snapshot-one')/'images/questions.sqlite3';size=image.stat().st_size
+    real=module.os.fdopen;reads=[]
+    class Counted:
+        def __init__(self,stream):self.stream=stream
+        def __getattr__(self,name):return getattr(self.stream,name)
+        def read(self,count):
+            raw=self.stream.read(count);reads.append(len(raw));return raw
+    monkeypatch.setattr(module.os,'fdopen',lambda *args,**kwargs:Counted(real(*args,**kwargs)))
+    try:
+        pages=[];offset=0
+        while offset is not None:
+            row=await owner.request('snapshot.read',dict(commandId='snapshot-one',store='questions',offset=offset,limit=65536))
+            pages.append(base64.b64decode(row['data']));offset=row['nextOffset']
+        assert b''.join(pages)==image.read_bytes()
+        assert sum(reads)==2*size,'One complete verification plus the selected windows, not one full hash per page'
+        streams=[row['stream'] for row in owner.snapshots.readers.values()]
+        assert len(streams)==1 and not streams[0].closed
+    finally:await owner.close()
+    assert all(stream.closed for stream in streams) and not owner.snapshots.readers
+
+@pytest.mark.parametrize('change',['mutate-restore-mtime','replace','hardlink','missing'])
+async def test_cached_descriptor_refuses_changed_identity_between_pages(tmp_path,change):
+    import os
+    owner=Owner({'dataDir':str(tmp_path/'owner')},forbidden,quiet)
+    try:
+        await owner.request('quiescence.acquire',CONTEXT);await owner.request('quiescence.snapshot',ARGS)
+        args=dict(commandId='snapshot-one',store='questions',offset=0,limit=16)
+        await owner.request('snapshot.read',args)
+        stream=next(iter(owner.snapshots.readers.values()))['stream']
+        image=owner.snapshots.directory('snapshot-one')/'images/questions.sqlite3'
+        if change=='mutate-restore-mtime':
+            info=image.stat()
+            with image.open('r+b') as output:output.seek(100);output.write(b'changed')
+            os.utime(image,ns=(info.st_atime_ns,info.st_mtime_ns))
+        elif change=='replace':
+            replacement=image.with_suffix('.replacement');replacement.write_bytes(image.read_bytes());os.replace(replacement,image)
+        elif change=='hardlink':os.link(image,image.with_suffix('.shared'))
+        else:image.unlink()
+        with pytest.raises((ValueError,FileNotFoundError)):await owner.request('snapshot.read',{**args,'offset':16})
+        assert stream.closed and not owner.snapshots.readers
+    finally:await owner.close()
+
+async def test_descriptor_lru_is_bounded_and_receipt_manifest_identity_selects_original(tmp_path):
+    from amplifier_unified_operations.snapshots import MAX_READERS
+    owner=Owner({'dataDir':str(tmp_path/'owner')},forbidden,quiet)
+    try:
+        await owner.request('quiescence.acquire',CONTEXT)
+        for command in ('snapshot-one','snapshot-two'):
+            await owner.request('quiescence.snapshot',{**ARGS,'commandId':command})
+            for store in ('intake','schedules','operations','questions','observations','transfer','manifest'):
+                await owner.request('snapshot.read',dict(commandId=command,store=store,offset=0,limit=16))
+        assert len(owner.snapshots.readers)==MAX_READERS
+        assert all(len(key)==5 and key[2] and len(key[3])==64 and len(key[4])==64 for key in owner.snapshots.readers)
+        assert all(not row['stream'].closed for row in owner.snapshots.readers.values())
+    finally:await owner.close()

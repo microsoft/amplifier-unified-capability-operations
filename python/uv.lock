@@ -5,7 +5,7 @@ requires-python = ">=3.11"
 [[package]]
 name = "amplifier-operations"
 version = "0.1.0"
-source = { git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Foperations&branch=main#467f870abb4487184789386ecdb460410f64bd9f" }
+source = { git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Foperations&branch=main#59efd72501d3bac9b93cf75de35f1d1491cb5521" }
 
 [[package]]
 name = "amplifier-portability"
@@ -20,7 +20,7 @@ dependencies = [
 [[package]]
 name = "amplifier-scheduling"
 version = "0.1.0"
-source = { git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Fscheduling&branch=main#467f870abb4487184789386ecdb460410f64bd9f" }
+source = { git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Fscheduling&branch=main#59efd72501d3bac9b93cf75de35f1d1491cb5521" }
 
 [[package]]
 name = "amplifier-unified-operations"
@@ -60,7 +60,7 @@ dev = [
 [[package]]
 name = "amplifier-worktrees"
 version = "0.1.0"
-source = { git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Fworktrees&branch=main#467f870abb4487184789386ecdb460410f64bd9f" }
+source = { git = "https://github.com/microsoft/amplifier-foundation?subdirectory=libraries%2Fworktrees&branch=main#59efd72501d3bac9b93cf75de35f1d1491cb5521" }
 dependencies = [
     { name = "filelock" },
 ]

@@ -12,12 +12,12 @@
   ],
   "foundationSnapshotApiVersion": 1,
   "sourcePython": {
-    "passed": 58,
+    "passed": 64,
     "failed": 0,
     "skipped": 0
   },
   "installedPython": {
-    "passed": 58,
+    "passed": 64,
     "failed": 0,
     "skipped": 0
   },
@@ -31,7 +31,8 @@
     "packages": 20,
     "compatible": true,
     "noEditablePeers": true,
-    "explicitWheelResolver": true
+    "explicitWheelResolver": true,
+    "currentMainGitResolverInstall": true
   },
   "dependencyFix": "Includes previously qualified portability >=0.1.2,<0.2 change from1084e7a, replaces stale main==0.1.0 pin",
   "artifacts": [
@@ -41,9 +42,9 @@
       "bytes": 16165
     },
     {
-      "path": "/Users/brkrabac/Documents/Codex/2026-10-03/unified-owner-operations-20261003/outputs/overnight-operations-recovery/operations-restore-guard-successor/amplifier_unified_operations-0.1.0-py3-none-any.whl",
-      "sha256": "89ab2114471b2c58a4c4881c65e8cb7236352f9c1b154428b9578c97d0ed0ee6",
-      "bytes": 46535
+      "path": "/Users/brkrabac/Documents/Codex/2026-10-03/unified-owner-operations-20261003/outputs/overnight-operations-recovery/operations-final-successor/amplifier_unified_operations-0.1.0-py3-none-any.whl",
+      "sha256": "786c6be57d0db3df7efa0e71c156537d847c4aac8bc2b7692a2ba6ff0d9c501e",
+      "bytes": 46874
     }
   ],
   "acceptanceLimits": [
@@ -61,5 +62,25 @@
       "released guard must refuse before path inspection",
       "FIFO manifest subprocess must refuse without hanging or creating target"
     ]
+  },
+  "foundationMainLock": "59efd72501d3bac9b93cf75de35f1d1491cb5521",
+  "portabilityMainLock": "e2e0c529ea439e76cdbb3411b6b166001594dd52",
+  "artifactExport": {
+    "maxSelectedDescriptors": 8,
+    "cacheIdentity": "original command/store/receipt signature/manifest digest/image digest",
+    "imageContentCached": false,
+    "singleSetReadBytes": "one verification pass plus each selected window; causal fixture 2*image bytes",
+    "everyWindowGuards": [
+      "regular single-link FD",
+      "path and FD exact dev/inode/mode/linkcount/size/mtime/ctime before and after read"
+    ],
+    "negativeCases": [
+      "mutate then restore mtime",
+      "replace",
+      "hardlink",
+      "missing"
+    ],
+    "closeAndRestartDropCache": true,
+    "trustBoundary": "owner-private immutable sealed namespace; same-user kernel tampering outside authority"
   }
 }

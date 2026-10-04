@@ -1,9 +1,14 @@
 """Trusted held Operations-store images; not a product archive or activation API."""
 import base64,hashlib,json,os,time,stat
 from pathlib import Path
+from collections import OrderedDict
 
 STORES=('intake','schedules','operations','questions','observations','transfer','legacy')
 MAX_BYTES=64*1024*1024
+MAX_READERS=8
+
+def identity(info):
+    return tuple(getattr(info,key) for key in ('st_dev','st_ino','st_mode','st_nlink','st_size','st_mtime_ns','st_ctime_ns'))
 
 def support():
     try:
@@ -33,7 +38,32 @@ def write(path,value):
         finally:os.close(fd)
 
 class Snapshots:
-    def __init__(self,owner):self.owner=owner
+    def __init__(self,owner):self.owner=owner;self.readers=OrderedDict()
+    def close(self):
+        for row in self.readers.values():row['stream'].close()
+        self.readers.clear()
+    def reader(self,key,path,sha):
+        row=self.readers.pop(key,None)
+        if row is not None:
+            try:
+                if identity(os.fstat(row['stream'].fileno()))!=row['identity'] or identity(path.stat())!=row['identity']:raise ValueError('Sealed snapshot image changed')
+            except BaseException:row['stream'].close();raise
+            self.readers[key]=row;return row
+        while len(self.readers)>=MAX_READERS:self.readers.popitem(last=False)[1]['stream'].close()
+        flags=os.O_RDONLY|getattr(os,'O_NONBLOCK',0)|getattr(os,'O_NOFOLLOW',0)
+        stream=os.fdopen(os.open(path,flags),'rb')
+        try:
+            info=os.fstat(stream.fileno());stamp=identity(info)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1 or info.st_size>MAX_BYTES:raise ValueError('Sealed snapshot image exceeds bounds')
+            digest=hashlib.sha256();deadline=time.monotonic()+30;count=0
+            while block:=stream.read(65536):
+                count+=len(block)
+                if count>MAX_BYTES or time.monotonic()>deadline:raise ValueError('Snapshot verification exceeds bounds')
+                digest.update(block)
+            if digest.hexdigest()!=sha or identity(os.fstat(stream.fileno()))!=stamp or identity(path.stat())!=stamp:raise ValueError('Sealed snapshot image changed')
+            row={'stream':stream,'identity':stamp,'bytes':info.st_size}
+        except BaseException:stream.close();raise
+        self.readers[key]=row;return row
     def directory(self,command):return checked(self.owner.root/'snapshots'/hashlib.sha256(token(command).encode()).hexdigest())
     def receipt(self,command):
         path=checked(self.directory(command)/'receipt.json')
@@ -71,6 +101,7 @@ class Snapshots:
         if set(args)!={'commandId','store','offset','limit'} or args['store'] not in (*STORES,'manifest'):raise ValueError('Exact bounded snapshot window required')
         offset=args['offset'];limit=args['limit']
         if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=65536:raise ValueError('Snapshot byte window must be 1..65536')
+        if self.owner.closed:raise ValueError('Snapshot owner is closed')
         receipt=self.receipt(args['commandId'])
         if not receipt or receipt['status']!='captured':raise ValueError('Original snapshot is not sealed; do not replay capture')
         directory=self.directory(args['commandId'])/'images'
@@ -80,20 +111,16 @@ class Snapshots:
             if not row or row['status']!='captured':raise ValueError('Selected original store was absent')
             name=row['file'];sha=row['sha256']
         path=checked(directory/name)
-        # Sealed artifact files are immutable; each selected read verifies its
-        # bounded image hash without hydrating any record or unrelated store.
-        before=path.stat();size=before.st_size
-        if not stat.S_ISREG(before.st_mode) or before.st_nlink!=1 or size>MAX_BYTES:raise ValueError('Sealed snapshot image exceeds bounds')
-        digest=hashlib.sha256();deadline=time.monotonic()+30;count=0
-        with path.open('rb') as stream:
-            while block:=stream.read(65536):
-                count+=len(block)
-                if count>MAX_BYTES or time.monotonic()>deadline:raise ValueError('Snapshot verification exceeds bounds')
-                digest.update(block)
-            if digest.hexdigest()!=sha or path.stat()!=before:raise ValueError('Sealed snapshot image changed')
-            if offset>size:raise ValueError('Snapshot offset exceeds selected image')
+        # Only a selected sealed descriptor is retained, never image content.
+        # Its original receipt/manifest identity is part of the bounded LRU key.
+        key=(args['commandId'],args['store'],receipt['signature'],receipt['snapshot']['manifestSha256'],sha)
+        row=self.reader(key,path,sha);stream=row['stream'];size=row['bytes']
+        if offset>size:raise ValueError('Snapshot offset exceeds selected image')
+        try:
             stream.seek(offset);raw=stream.read(limit)
-            if path.stat()!=before:raise ValueError('Sealed snapshot image changed')
+            if identity(os.fstat(stream.fileno()))!=row['identity'] or identity(path.stat())!=row['identity']:raise ValueError('Sealed snapshot image changed')
+        except BaseException:
+            self.readers.pop(key,None);stream.close();raise
         return {'data':base64.b64encode(raw).decode(),'encoding':'base64','bytes':size,'sha256':sha,'offset':offset,'nextOffset':offset+len(raw) if offset+len(raw)<size else None,'replayed':False}
 
 def restore_inactive(snapshot,destination,*,manifest_sha256,assert_held):

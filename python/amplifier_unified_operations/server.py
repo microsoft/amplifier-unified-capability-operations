@@ -161,7 +161,7 @@ class Owner:
             return await self.operations.dispatch(name,args,origin)
         raise ValueError('Unknown owner method')
     async def close(self):
-        self.closed=True
+        self.closed=True;self.snapshots.close()
         if self.tick_task:self.tick_task.cancel();await asyncio.gather(self.tick_task,return_exceptions=True)
         await self.observations.close();await self.schedules.close();await self.operations.close();self.questions.close();self.transfer.close()
         if self._historical:self._historical.close()

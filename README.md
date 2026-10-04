@@ -314,3 +314,16 @@ remains false until the product coordinator also accounts for canonical native
 history, external process authority, retained snapshot artifacts, every other
 owner, and the complete signed runtime-code graph. No external-root discovery,
 new process activation, TTL fence release or replay is provided here.
+
+Artifact export verifies a selected sealed file against its original receipt and
+manifest digest once per opened descriptor. At most eight descriptors are retained
+in a bounded LRU, sufficient for one seven-store set plus its manifest. Each
+window checks the regular single-link file's descriptor and path identity before
+and after reading, including inode, size, modification time and change time. A
+mutated, replaced, shared or missing file refuses further reads even if its old
+modification time is restored. Closing or restarting the owner discards every
+descriptor. No image bodies or history records are cached. This relies on the same
+trusted owner-private sealed namespace as Foundation capture, not protection from
+same-user kernel tampering. Complete single-set export reads each image once for
+verification and once for its windows, rather than hashing the whole image on
+every 64 KiB page.
