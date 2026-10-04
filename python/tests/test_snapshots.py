@@ -88,3 +88,26 @@ async def test_old_optional_library_never_advertises_or_grants_snapshot(tmp_path
         with pytest.raises(ValueError,match='no snapshot support'):await owner.request('quiescence.snapshot',ARGS)
         assert not (tmp_path/'snapshots').exists()
     finally:await owner.close()
+
+
+def test_restore_released_guard_precedes_any_manifest_io(tmp_path,monkeypatch):
+    import amplifier_unified_operations.snapshots as module
+    def released():raise ValueError('Original restore guard released')
+    def no_io(*args,**kwargs):raise AssertionError('Manifest I/O before held guard')
+    monkeypatch.setattr(module,'checked',no_io)
+    with pytest.raises(ValueError,match='guard released'):
+        restore_inactive(tmp_path/'snapshot',tmp_path/'inactive',manifest_sha256='a'*64,assert_held=released)
+    assert not (tmp_path/'inactive').exists()
+
+@pytest.mark.skipif(not hasattr(__import__('os'),'mkfifo'),reason='FIFO is a POSIX file type')
+def test_restore_fifo_manifest_refuses_without_blocking_or_destination(tmp_path):
+    import subprocess,sys,os
+    snapshot=tmp_path/'snapshot';snapshot.mkdir();os.mkfifo(snapshot/'manifest.json')
+    code="from amplifier_unified_operations.snapshots import restore_inactive; import sys; restore_inactive(sys.argv[1],sys.argv[2],manifest_sha256='a'*64,assert_held=lambda:None)"
+    # Use the same exact installed/source module selected by the test caller;
+    # timeout makes a regression fail causally rather than hang the suite.
+    module_path=__import__('amplifier_unified_operations').__path__[0]
+    bootstrap="import sys;sys.path.insert(0,sys.argv.pop(1));"+code
+    result=subprocess.run([sys.executable,'-I','-B','-c',bootstrap,str(__import__('pathlib').Path(module_path).parent),str(snapshot),str(tmp_path/'inactive')],capture_output=True,text=True,timeout=2)
+    assert result.returncode!=0 and 'Bounded regular Operations manifest required' in result.stderr
+    assert not (tmp_path/'inactive').exists()

@@ -103,9 +103,21 @@ def restore_inactive(snapshot,destination,*,manifest_sha256,assert_held):
     The existing product archive/recovery coordinator owns those decisions.
     """
     from amplifier_operations.snapshots import restore_snapshot
+    if not callable(assert_held):raise ValueError('Caller-held restore guard required')
+    assert_held()
     manifest=checked(Path(snapshot)/'manifest.json')
-    if manifest.stat().st_size>16384:raise ValueError('Bounded Operations manifest required')
-    value=json.loads(manifest.read_bytes())
+    # Nonblocking open plus descriptor validation avoids trusting a path stat:
+    # a FIFO or a file replaced between inspection and open must never block.
+    flags=os.O_RDONLY|getattr(os,'O_NONBLOCK',0)|getattr(os,'O_NOFOLLOW',0)
+    fd=os.open(manifest,flags)
+    with os.fdopen(fd,'rb') as stream:
+        info=os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1 or info.st_size>16384:raise ValueError('Bounded regular Operations manifest required')
+        raw=stream.read(16385)
+        assert_held()
+        after=os.fstat(stream.fileno())
+        if len(raw)>16384 or any(getattr(after,key)!=getattr(info,key) for key in ('st_dev','st_ino','st_mode','st_nlink','st_size','st_mtime_ns','st_ctime_ns')):raise ValueError('Bounded unchanged Operations manifest required')
+    value=json.loads(raw)
     if not isinstance(value,dict) or not isinstance(value.get('stores'),list) or len(value['stores'])!=len(STORES) or any(not isinstance(row,dict) or not isinstance(row.get('id'),str) for row in value['stores']) or {row['id'] for row in value['stores']}!=set(STORES):raise ValueError('Exact Operations store census required')
     result=restore_snapshot(snapshot,destination,manifest_sha256=manifest_sha256,assert_held=assert_held,max_bytes=MAX_BYTES)
     return {**result,'readyForActivation':False,'completeProductRestore':False}

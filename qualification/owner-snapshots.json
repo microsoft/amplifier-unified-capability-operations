@@ -12,12 +12,12 @@
   ],
   "foundationSnapshotApiVersion": 1,
   "sourcePython": {
-    "passed": 56,
+    "passed": 58,
     "failed": 0,
     "skipped": 0
   },
   "installedPython": {
-    "passed": 56,
+    "passed": 58,
     "failed": 0,
     "skipped": 0
   },
@@ -41,9 +41,9 @@
       "bytes": 16165
     },
     {
-      "path": "/Users/brkrabac/Documents/Codex/2026-10-03/unified-owner-operations-20261003/outputs/overnight-operations-recovery/operations-candidate/amplifier_unified_operations-0.1.0-py3-none-any.whl",
-      "sha256": "45b84f4f6501b56fc148908de4ad769da66e8357d25221b081f867015e407513",
-      "bytes": 46257
+      "path": "/Users/brkrabac/Documents/Codex/2026-10-03/unified-owner-operations-20261003/outputs/overnight-operations-recovery/operations-restore-guard-successor/amplifier_unified_operations-0.1.0-py3-none-any.whl",
+      "sha256": "89ab2114471b2c58a4c4881c65e8cb7236352f9c1b154428b9578c97d0ed0ee6",
+      "bytes": 46535
     }
   ],
   "acceptanceLimits": [
@@ -51,5 +51,15 @@
     "Root coordinator owns authentication, private-content review, other owners, signed runtime graph and artifact sealing.",
     "Canonical native history, external authority and retained snapshot artifacts are explicit omissions of this seven-store set.",
     "No live host changes, source reconstruction from moving main, activation, replay or automatic fence reopening."
-  ]
+  ],
+  "restorePreflight": {
+    "guardBeforeManifestIO": true,
+    "nonblockingDescriptorOpen": true,
+    "regularSingleLinkManifest": true,
+    "boundedReadBytes": 16385,
+    "causalTests": [
+      "released guard must refuse before path inspection",
+      "FIFO manifest subprocess must refuse without hanging or creating target"
+    ]
+  }
 }
