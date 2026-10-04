@@ -1,3 +1,4 @@
+import {forwardAdmissionAbort} from './admission-abort.js';
 import {managedParticipant} from './managed-files.js';
 import {retentionRequest,retentionParticipant} from './retention.js';
 import {serviceIdentity,validateServiceRelease,type ServiceIdentity,type ServiceReleaseFields} from './service-lifecycle.js';
@@ -33,6 +34,7 @@ const sessionOf=(context:Context)=>typeof context.session==='string'?context.ses
 /** Two-way owner channel. Calls are never retried after lost transport. */
 export class OwnerConnection {
  private process?:ChildProcessWithoutNullStreams;private ready?:Promise<void>;private next=0;private closed=false;private pending=new Map<number,{resolve:(r:any)=>void;reject:(e:Error)=>void}>();
+ get admissionPending(){return this.pending.size;}
  constructor(private launcher:Launcher,private callback:(method:string,args:Json)=>Promise<any>,private changed:(scope:string,topic?:string)=>void,private idle:()=>void=()=>{}){}
  private fail(message:string){this.closed=true;for(const entry of this.pending.values())entry.reject(Error(message));this.pending.clear();}
  private write(row:Json){const data=JSON.stringify(row)+'\n';if(Buffer.byteLength(data)>4_000_000)throw Error('Owner frame exceeds4MB');if(this.closed||!this.process)throw Error('Owner unavailable; uncertain work was not replayed');this.process.stdin.write(data,error=>{if(error)this.fail('Owner transport failed; outcome unknown.');});}
@@ -137,7 +139,7 @@ export class OperationsCapabilities {
    if(result.fenceId!==exact.fenceId||result.intakeClosed!==true)throw Error('Owner intake acquisition is not confirmed');
    let live=true;const snapshots=(await this.owner.request('initialize',{})).quiescence?.snapshots?.version===1;
    return {ownerId,fenceId:exact.fenceId,...(exact.purpose==='recovery'&&snapshots?{captureSnapshot:async(args:{commandId:string;privateContentReviewed:true})=>{if(!live)throw Error('Snapshot recovery lease is no longer live');return this.owner.request('quiescence.snapshot',{...args,context:exact});}}:{}),inspectRetentionReferences:(args:any)=>this.owner.request('quiescence.retention',retentionRequest(exact,args)),release:(outcome:'ready'|'unchanged'|'unknown',proof?:QuiescenceProof|{kind:'admission-refused'})=>{live=false;return release(exact,outcome,proof);}};
-  },reconcileRelease:async(context:Readonly<QuiescenceContext>&{outcome:'ready'|'unchanged';proof:QuiescenceProof})=>{if(context.purpose==='service-stop')validateServiceRelease(context,context.outcome,context.proof);return release(context,context.outcome,context.proof);}},args=>this.owner.request('quiescence.retention',args)),args=>this.owner.request('quiescence.managedFiles',args),async()=>(await this.owner.request('initialize',{})).quiescence?.managedFiles?.version===1);
+  },abortAdmission:async(context:any)=>{if(this.owner.admissionPending)throw Error('Owner requests are still in flight');return forwardAdmissionAbort((method,params)=>this.owner.request(method,params),context,ownerId);},reconcileRelease:async(context:Readonly<QuiescenceContext>&{outcome:'ready'|'unchanged';proof:QuiescenceProof})=>{if(context.purpose==='service-stop')validateServiceRelease(context,context.outcome,context.proof);return release(context,context.outcome,context.proof);}},args=>this.owner.request('quiescence.retention',args)),args=>this.owner.request('quiescence.managedFiles',args),async()=>(await this.owner.request('initialize',{})).quiescence?.managedFiles?.version===1);
  }
  close=async()=>this.owner.close();
 }
