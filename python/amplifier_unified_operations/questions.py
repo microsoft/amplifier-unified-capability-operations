@@ -6,8 +6,11 @@ import hashlib
 import hmac
 import json
 import os
+import re
+from pathlib import Path
 import secrets
 import sqlite3
+import stat
 import time
 import uuid
 
@@ -16,28 +19,67 @@ def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
 
 
+
+_TABLES = {'questions': 'CREATE TABLE questions (\n'
+              '                id TEXT PRIMARY KEY, session TEXT NOT NULL, status TEXT NOT NULL,\n'
+              '                created REAL NOT NULL, delivery TEXT, value TEXT NOT NULL)',
+ 'question_commands': 'CREATE TABLE question_commands (\n'
+                      '                session TEXT NOT NULL, command TEXT NOT NULL, fingerprint '
+                      'TEXT NOT NULL,\n'
+                      '                operation TEXT NOT NULL, question TEXT NOT NULL, result '
+                      'TEXT NOT NULL,\n'
+                      '                PRIMARY KEY(session,command))'}
+
+def _open_authority(path):
+    """Validate retained authority read-only before opening a writer."""
+    path = Path(path).absolute()
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for candidate in (path, *(Path(str(path) + suffix) for suffix in ("-wal", "-shm", "-journal"))):
+        if os.path.lexists(candidate) and not stat.S_ISREG(candidate.lstat().st_mode):
+            raise ValueError("Authority database and sidecars must be regular files, without symlinks")
+    new = not os.path.lexists(path)
+    if new and any(os.path.lexists(str(path) + suffix) for suffix in ("-wal", "-shm", "-journal")):
+        raise ValueError("Retained authority sidecar has no main database")
+    if not new:
+        reader = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
+        try:
+            names = tuple(_TABLES)
+            found = {name: (kind, sql) for name, kind, sql in reader.execute(
+                "SELECT name,type,substr(sql,1,4097) FROM sqlite_master WHERE name IN (" + ",".join("?" for _ in names) + ")", names)}
+            normalize = lambda sql: re.sub(r"\s+", "", sql).lower().replace("ifnotexists", "")
+            for name, expected in _TABLES.items():
+                actual = found.get(name)
+                if actual is None or actual[0] != "table" or not isinstance(actual[1], str) or len(actual[1]) >= 4097:
+                    raise ValueError("Missing or unsupported authority schema: " + name)
+                if normalize(actual[1]) != normalize(expected):
+                    raise ValueError("Unsupported authority schema: " + name)
+                reader.execute("SELECT * FROM " + name + " LIMIT 0")
+        finally:
+            reader.close()
+    else:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
+    db = sqlite3.connect(path.as_uri() + "?mode=rw", uri=True)
+    try:
+        path.chmod(0o600)
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("PRAGMA synchronous=FULL")
+        if new:
+            db.executescript("BEGIN;" + ";".join(_TABLES.values()) + ";COMMIT;")
+        db.executescript('CREATE INDEX IF NOT EXISTS questions_scope ON questions(session,created,id);CREATE INDEX IF NOT EXISTS questions_status ON questions(session,status,created,id);CREATE INDEX IF NOT EXISTS questions_delivery ON questions(delivery);')
+    except BaseException:
+        db.close()
+        raise
+    return db
+
+
 class Questions:
     def __init__(self, path, host, changed, clock=time.time):
         self.host, self.changed, self.clock = host, changed, clock
         self.lock = asyncio.Lock()
         self.secret = secrets.token_bytes(32)
-        self.db = sqlite3.connect(path)
+        self.db = _open_authority(path)
         self.db.row_factory = sqlite3.Row
-        self.db.executescript('''
-            PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=FULL;
-            CREATE TABLE IF NOT EXISTS questions (
-                id TEXT PRIMARY KEY, session TEXT NOT NULL, status TEXT NOT NULL,
-                created REAL NOT NULL, delivery TEXT, value TEXT NOT NULL);
-            CREATE INDEX IF NOT EXISTS questions_scope ON questions(session,created,id);
-            CREATE INDEX IF NOT EXISTS questions_status ON questions(session,status,created,id);
-            CREATE INDEX IF NOT EXISTS questions_delivery ON questions(delivery);
-            CREATE TABLE IF NOT EXISTS question_commands (
-                session TEXT NOT NULL, command TEXT NOT NULL, fingerprint TEXT NOT NULL,
-                operation TEXT NOT NULL, question TEXT NOT NULL, result TEXT NOT NULL,
-                PRIMARY KEY(session,command));
-        ''')
-        os.chmod(path, 0o600)
         with self.db:
             self.db.execute("""UPDATE questions SET delivery='unknown', value=json_set(value,
                 '$.delivery.status','unknown','$.delivery.message',
