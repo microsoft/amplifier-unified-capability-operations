@@ -1,3 +1,8 @@
+import {forwardAdmissionAbort} from './admission-abort.js';
+import {managedParticipant} from './managed-files.js';
+import {retentionRequest,retentionParticipant} from './retention.js';
+import {serviceIdentity,validateServiceRelease,type ServiceIdentity,type ServiceReleaseFields} from './service-lifecycle.js';
+export type {ServiceIdentity,ServiceReleaseFields} from './service-lifecycle.js';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
 export type Json=Record<string,any>;
@@ -29,6 +34,7 @@ const sessionOf=(context:Context)=>typeof context.session==='string'?context.ses
 /** Two-way owner channel. Calls are never retried after lost transport. */
 export class OwnerConnection {
  private process?:ChildProcessWithoutNullStreams;private ready?:Promise<void>;private next=0;private closed=false;private pending=new Map<number,{resolve:(r:any)=>void;reject:(e:Error)=>void}>();
+ get admissionPending(){return this.pending.size;}
  constructor(private launcher:Launcher,private callback:(method:string,args:Json)=>Promise<any>,private changed:(scope:string,topic?:string)=>void,private idle:()=>void=()=>{}){}
  private fail(message:string){this.closed=true;for(const entry of this.pending.values())entry.reject(Error(message));this.pending.clear();}
  private write(row:Json){const data=JSON.stringify(row)+'\n';if(Buffer.byteLength(data)>4_000_000)throw Error('Owner frame exceeds4MB');if(this.closed||!this.process)throw Error('Owner unavailable; uncertain work was not replayed');this.process.stdin.write(data,error=>{if(error)this.fail('Owner transport failed; outcome unknown.');});}
@@ -57,8 +63,8 @@ export class OwnerConnection {
  async request(method:string,args:Json){await this.start();return this.send(method,args);}
  async close(){if(!this.process){this.closed=true;return;}this.process.stdin.end();await new Promise<void>(resolve=>{const timer=setTimeout(()=>{this.process?.kill();resolve();},4000);this.process!.once('exit',()=>{clearTimeout(timer);resolve();});});this.fail('Owner closed');}
 }
-export interface QuiescenceContext {fenceId:string;commandId:string;purpose:'distribution-update'|'recovery';instanceId:string;dataScope:string;}
-export interface QuiescenceProof {verified:true;fenceId:string;commandId:string;outcome:'ready'|'unchanged';instanceId:string;dataScope:string;receiptId:string;}
+export interface QuiescenceContext {fenceId:string;commandId:string;purpose:'distribution-update'|'recovery'|'service-stop'|'retention-hide'|'managed-files-disposal';instanceId:string;dataScope:string;serviceIdentity?:ServiceIdentity;}
+export interface QuiescenceProof extends Partial<ServiceReleaseFields> {verified:true;fenceId:string;commandId:string;outcome:'ready'|'unchanged';instanceId:string;dataScope:string;receiptId:string;}
 const quiescenceReads=new Set(['schedule.list','schedule.read','schedule.request','operations.list','operations.status','operations.read','operations.wait','operations.request','operations.history.list','operations.history.read','question.list','question.read','observation.observers','observation.request','observation.list','observation.read','observation.report']);
 export class OperationsCapabilities {
  readonly manifest:{version:number;topics:Record<string,Json>;actions:Record<string,Json>};
@@ -116,19 +122,24 @@ export class OperationsCapabilities {
  stageTransferEvidence=async(args:Json)=>this.owner.request('stageTransferEvidence',args);
  activateTransferEvidence=async(args:Json)=>this.owner.request('activateTransferEvidence',args);
  readTransferEvidence=async(args:Json)=>{await this.options.inspectSession(args.session);return this.owner.request('readTransferEvidence',args);};
+ /** Trusted archive coordinator only; inspection never retries capture or activates a restore. */
+ inspectOwnerSnapshot=(commandId:string)=>this.owner.request('snapshot.inspect',{commandId});
+ readOwnerSnapshot=(args:{commandId:string;store:string;offset:number;limit:number})=>this.owner.request('snapshot.read',args);
  /** Trusted composition only. The private Python owner closes intake durably before returning. */
  quiescenceParticipant(ownerId:string){
   if(!ownerId||ownerId.length>200)throw Error('Bounded owner identity required');
   const release=async(context:QuiescenceContext,outcome:'ready'|'unchanged'|'unknown',proof?:QuiescenceProof|{kind:'admission-refused'})=>{
+   if(context.purpose==='service-stop'&&outcome!=='unknown'&&proof?.kind!=='admission-refused')validateServiceRelease(context,outcome,proof);
    const result=await this.owner.request('quiescence.release',{...context,outcome,proof});
    if(outcome!=='unknown'&&result.released!==true)throw Error('Owner intake release is not confirmed');
   };
-  return {id:ownerId,acquire:async(context:Readonly<QuiescenceContext>)=>{
-   const exact={...context},result=await this.owner.request('quiescence.acquire',exact);
+  return managedParticipant(retentionParticipant({id:ownerId,serviceStop:{version:1 as const},acquire:async(context:Readonly<QuiescenceContext>)=>{
+   const exact:QuiescenceContext=structuredClone(context);if(exact.purpose==='retention-hide'&&(await this.owner.request('initialize',{})).quiescence?.retentionHide?.version!==1)return null;if(exact.purpose==='service-stop'){exact.serviceIdentity=serviceIdentity(exact.serviceIdentity);if(exact.serviceIdentity.instanceId!==exact.instanceId||exact.serviceIdentity.dataScope!==exact.dataScope)throw Error('Service identity differs from operation context');const hello=await this.owner.request('initialize',{});if(hello.quiescence?.serviceStop?.version!==1)return null;}const result=await this.owner.request('quiescence.acquire',exact);
    if(result.acquired!==true)return null;
    if(result.fenceId!==exact.fenceId||result.intakeClosed!==true)throw Error('Owner intake acquisition is not confirmed');
-   return {ownerId,fenceId:exact.fenceId,release:(outcome:'ready'|'unchanged'|'unknown',proof?:QuiescenceProof|{kind:'admission-refused'})=>release(exact,outcome,proof)};
-  },reconcileRelease:async(context:Readonly<QuiescenceContext>&{outcome:'ready'|'unchanged';proof:QuiescenceProof})=>release(context,context.outcome,context.proof)};
+   let live=true;const snapshots=(await this.owner.request('initialize',{})).quiescence?.snapshots?.version===1;
+   return {ownerId,fenceId:exact.fenceId,...(exact.purpose==='recovery'&&snapshots?{captureSnapshot:async(args:{commandId:string;privateContentReviewed:true})=>{if(!live)throw Error('Snapshot recovery lease is no longer live');return this.owner.request('quiescence.snapshot',{...args,context:exact});}}:{}),inspectRetentionReferences:(args:any)=>this.owner.request('quiescence.retention',retentionRequest(exact,args)),release:(outcome:'ready'|'unchanged'|'unknown',proof?:QuiescenceProof|{kind:'admission-refused'})=>{live=false;return release(exact,outcome,proof);}};
+  },abortAdmission:async(context:any)=>{if(this.owner.admissionPending)throw Error('Owner requests are still in flight');return forwardAdmissionAbort((method,params)=>this.owner.request(method,params),context,ownerId);},reconcileRelease:async(context:Readonly<QuiescenceContext>&{outcome:'ready'|'unchanged';proof:QuiescenceProof})=>{if(context.purpose==='service-stop')validateServiceRelease(context,context.outcome,context.proof);return release(context,context.outcome,context.proof);}},args=>this.owner.request('quiescence.retention',args)),args=>this.owner.request('quiescence.managedFiles',args),async()=>(await this.owner.request('initialize',{})).quiescence?.managedFiles?.version===1);
  }
  close=async()=>this.owner.close();
 }

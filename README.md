@@ -214,3 +214,158 @@ restart, also blocks offline legacy imports, and can reopen only with the exact
 host-verified outcome proof (or the host's pre-effect admission refusal). An
 unknown outcome keeps intake closed. `reconcileRelease` never reruns acquisition
 or a mutation. Reusing a released fence is rejected.
+
+## Persistent service stop and resume
+
+The trusted `quiescenceParticipant()` advertises `serviceStop: {version: 1}`.
+For `purpose: 'service-stop'`, the host supplies the normal fence context plus
+`serviceIdentity: {installationId, dataScope, ownerId, instanceId, releaseDigest}`.
+The owner copies and retains the complete identity with its durable intake fence;
+restarting a process does not open intake or replay work. The host authenticates
+platform evidence. This participant validates its exact binding, not a PID,
+caller-provided claim of idleness, or socket presence.
+
+A conclusive release needs `kind: 'service-lifecycle'`, the retained `expected`
+identity, the exact `observed` identity, and the ordinary verified fence receipt.
+`outcome: 'ready'` requires a distinct instance, `serviceOutcome: 'resumed'`,
+`resumeCommandId`, `exitReceiptId`, and `readyReceiptId`. `outcome: 'unchanged'`
+requires the same instance, `serviceOutcome: 'stop-refused'`, and
+`refusalReceiptId`. The two receipt sets cannot be mixed. A changed release
+identity, proof, or outcome refuses; exact completed retries are passive.
+Generic update/recovery evidence cannot release a service fence.
+
+`{kind: 'admission-refused'}` is restricted to the original live lease's partial
+acquisition rollback. It is not a restart reconciliation mechanism. An unknown
+outcome keeps intake closed, and passive inspection/receipt routes stay usable.
+No service stop, platform process signaling, authenticated supervisor, or remote
+provider safety is implemented by this participant itself.
+
+The private Python owner advertises this support only when the installed optional Foundation `DurableIntakeFence.SERVICE_STOP_VERSION` is 1. The Node bridge negotiates it before acquisition; an older library is a known refusal. The lock tracks current actions, scheduler work and detached owned jobs, not historical uncertain receipts alone. Foundation remains an optional library dependency and is not imported by generic host code.
+
+
+## Held retention inspection
+
+The actual quiescence participant advertises `retentionHide: {version: 1}`.
+Acquire it with purpose `retention-hide` and the exact coordinator fence context.
+The returned live lease exposes
+`inspectRetentionReferences({sessions: ["ahp-session:/..."], limit: 101})`.
+The family must contain 1–101 distinct explicit session URIs. The result is
+`{coverage: "complete" | "partial", protected: [{session, reasons}], omissions}`.
+Only the original held lease can inspect; release, uncertainty or replacement
+invalidates that authority. Release reconciliation requires the same authenticated
+coordinator proof and never retries effects. A pre-effect admission rollback is
+allowed only on the original live lease. The purpose grants no mutation rights.
+
+Inspection reads bounded indexed owner metadata while intake remains closed.
+It never starts a native worker, scans canonical histories, deletes product records,
+or interprets absence of a runtime as absence of deferred work. `complete` describes
+this owner's reference coverage, not permission to hide or delete a conversation.
+The coordinator must hold every configured owner, check all results, and use the
+native history owner's separate preservation-first hide boundary.
+
+Future or paused schedules, unresolved scheduled admissions, required unanswered questions, uncertain answer delivery, unfinished operations, watches and pending observation delivery protect their explicit conversations. These are indexed reads; no due work is run to determine eligibility.
+
+## Managed-file disposal protection
+
+`quiescenceParticipant.managedFiles = {version: 1, preservesCanonical: true}` is a separate contract from `retentionHide`. It holds the real owner intake with purpose `managed-files-disposal`, preserving every owner record. The acquired lease exposes:
+
+```ts
+inspectManagedFilesReferences({
+  sessions: [rootSession, ...descendants], // explicit AHP URIs, at most 101
+  limit: 101,
+  allocation: {allocationId, executionDirectory, allocationHash, treeHash, entryCount, bytes}
+}) // {coverage: 'complete' | 'partial', protected: [{session, reasons}], omissions: [...] }
+```
+
+The allocation comes from the trusted host's native-reviewed managed allocation, never a browser path. It is bound with the exact selected family on the first inspection of the live lease; a different review is refused. This read does not grant file deletion. The coordinator must bind release to its exact durable managed-files effect receipt, keep unknown fences held, and refuse partial/protected coverage. Lease inspectors expire before release begins, including unknown release; admission-refused rollback is available only on the original live lease. Restart reconciliation requires the existing exact verified release proof.
+
+Future active/paused/review-needed schedules, active schedule admissions, required unanswered questions, answer delivery, uncertain operations and observation watches/outboxes protect selected conversations. Completed process output is stored by canonical native/operation owners, not lazily read from the execution directory. No task is started to inspect references.
+
+Inspection uses bounded selected metadata or indexed overlap probes, not native transcripts, a global history projection, or worker/model startup. Existing retention-hide and service-stop lifecycles are unchanged. The package tests cover the independently installed owner transport and held/unknown/exact-release behavior; full host/native/browser disposal acceptance remains a composition responsibility.
+
+### Trusted Operations-store recovery images
+
+A freshly acquired recovery lease may expose `captureSnapshot({commandId,
+privateContentReviewed: true})` when the installed optional Foundation Operations
+library advertises snapshot version 1. The coordinator must authenticate the
+caller and review private-content inclusion. Retained fences after restart never
+grant a fresh snapshot lease, and releasing a lease retires its capture authority.
+This hook composes with the existing product archive/recovery coordinator; it is
+not a separate backup action or an activation API.
+
+Capture covers exactly `intake`, `schedules`, `operations`, `questions`,
+`observations`, `transfer` and optional `legacy` SQLite stores. Writers, scheduled
+admission and observation work remain held for the complete set. Unknown storage
+in the owner root refuses capture. Committed WAL content becomes sealed SQLite
+images; the original database/WAL bytes and canonical history remain preserved.
+Images total at most 64 MiB and capture has a thirty-second deadline. Original
+commands retain an unknown receipt before any image effect, and exact retries
+inspect that receipt without repeating capture. Completed receipts identify each
+image, missing stores and the manifest digest.
+
+Trusted composition can use `inspectOwnerSnapshot(commandId)` and bounded
+`readOwnerSnapshot({commandId,store,offset,limit})` windows (at most 64 KiB).
+`amplifier_unified_operations.snapshots.restore_inactive` requires the exact seven
+store census, an authenticated reviewed manifest digest and a caller-held guard;
+it restores into a new inactive destination without overwriting source state or
+starting work. The original intake fence and unknown outcomes remain durable.
+A hash alone does not authenticate an archive. Complete product backup/restore
+remains false until the product coordinator also accounts for canonical native
+history, external process authority, retained snapshot artifacts, every other
+owner, and the complete signed runtime-code graph. No external-root discovery,
+new process activation, TTL fence release or replay is provided here.
+
+Artifact export verifies a selected sealed file against its original receipt and
+manifest digest once per opened descriptor. At most eight descriptors are retained
+in a bounded LRU, sufficient for one seven-store set plus its manifest. Each
+window checks the regular single-link file's descriptor and path identity before
+and after reading, including inode, size, modification time and change time. A
+mutated, replaced, shared or missing file refuses further reads even if its old
+modification time is restored. Closing or restarting the owner discards every
+descriptor. No image bodies or history records are cached. This relies on the same
+trusted owner-private sealed namespace as Foundation capture, not protection from
+same-user kernel tampering. Complete single-set export reads each image once for
+verification and once for its windows, rather than hashing the whole image on
+every 64 KiB page.
+
+### Retained SQLite startup authority
+
+The owner acquires its existing exclusive `owner.lock` before constructing
+question and observation stores. Questions require both `questions` and
+`question_commands`; observations require `records`, `commands`, and `terminals`.
+Bounded WAL-aware read-only schema checks precede any writable open, index
+reconstruction, legacy migration or restart normalization. Missing authority
+refuses startup without recreating command identity, terminal markers or outbox
+admission authority. Refusal preserves the main and nonempty WAL; SQLite may
+update derived SHM. Fresh initialization requires absence of the main and all
+WAL/SHM/rollback sidecars, including dangling symlinks. Only indexes are derived.
+
+The complete original observation profile without `commands.receipt` remains
+supported by its existing additive column migration, preserving original command
+identities with a NULL legacy receipt. Both its migrated schema and the current
+profile reopen normally. Historical imports remain display-only and never supply
+execution authority. These bounded schema checks do not detect erased rows or
+externally recreated complete schemas. The combined operation owner declares
+Foundation's four-table `require_requests=True` profile before journal recovery.
+
+Main and existing sidecars must be regular files without symlinks before SQLite
+is called, so retained FIFOs cannot block startup. Callers serialize storage
+lifecycle changes; this is not an adversarial VFS or path-swap guarantee.
+
+## Pre-retirement distribution admission abort
+
+The trusted Host participant forwards `abortAdmission(context_with_proof)` to the
+private owner `quiescence.abortAdmission` route (slash form for workspace,
+notifications and diagnostics). It negotiates `quiescence.admissionAbort.version=1`,
+validates exact Host13 proof and typed owner receipt, and reports unsupported older
+workers explicitly. The owner delegates to Foundation Operations' shared
+`DurableIntakeFence` using its existing authority database, original acquisition or
+refusal journal, and current active/background/pending accounting. No missing held
+row, generic release proof or changed retry authorizes settlement. The private
+`quiescence.admissionAbortReceipt` route observes an original completed receipt.
+
+This is additive future-source support. Old deployed stageless/unrecorded attempts
+remain unknown. Actual authenticated Updates proof, complete composition and live
+adoption require independent qualification; this adapter does not reopen intake by
+itself. Feedback's Python participant is only one subowner; its Node aggregate and
+resources-upload participant require separate complete attempted-subowner receipts.

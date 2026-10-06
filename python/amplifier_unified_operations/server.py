@@ -9,6 +9,7 @@ from jsonschema import Draft202012Validator,ValidationError
 from .errors import ScheduleRefused
 from .history import HistoricalRecords
 from .quiescence import Intake
+from .retention import References
 from .transfer import TransferEvidence
 from .scheduler import Scheduler
 from .operations import Operations
@@ -39,12 +40,22 @@ class Owner:
         self.lease=FileLock(str(root/'owner.lock'));self.lease.acquire(timeout=0)
         self.intake=Intake(root/'intake.sqlite3')
         self.host=host;self.notify=notify;self.schemas=definitions();self.revisions={};self.tick_task=None;self.closed=False;self.awaiting_idle=False
-        self.root=root;self._historical=None
+        self.root=root;self._historical=None;self.snapshot_live=None
+        from .snapshots import Snapshots
+        self.snapshots=Snapshots(self)
         self.questions=Questions(root/'questions.sqlite3',host,lambda sid:self.changed(sid,'questions'))
         self.schedules=Scheduler(root/'schedules.sqlite3',self.callback,lambda sid:self.changed(sid,'schedules'))
         self.operations=Operations(root/'operations.sqlite3',self.callback,lambda sid:self.changed(sid,'operations'))
         self.observations=Observations(root/'observations.sqlite3',self.callback,lambda sid:self.changed(sid,'observations'));self.observations_enabled=False
         self.transfer=TransferEvidence(root/'transfer.sqlite3',self)
+        self.retention=References(self)
+    async def notify_counted(self, *args):
+        self.intake.background += 1
+        try:
+            return await self.notify(*args)
+        finally:
+            self.intake.background -= 1
+
     async def callback(self,method,args):
         if method=='questionDependency':return self.questions.dependency(args['session'],args['id'])
         if method=='operationSources':
@@ -57,13 +68,13 @@ class Owner:
         # This map is presentation-only and capped; authoritative revision stays on disk.
         self.revisions.pop(sid,None);self.revisions[sid]=0
         while len(self.revisions)>128:self.revisions.pop(next(iter(self.revisions)))
-        await self.notify('owner/changed',{'session':sid,'topic':topic})
+        await self.notify_counted('owner/changed',{'session':sid,'topic':topic})
     def start(self):
         if self.tick_task is None:self.tick_task=asyncio.create_task(self.loop())
     async def maybe_idle(self):
         if self.awaiting_idle and not self.closed and not self.intake.calls and not self.intake.background and not self.schedules.pending and not self.observations.tasks:
             self.awaiting_idle=False
-            await self.notify('owner/idle',{})
+            await self.notify_counted('owner/idle',{})
     async def loop(self):
         while not self.closed:
             if not self.intake.fence:
@@ -78,14 +89,30 @@ class Owner:
                     await self.maybe_idle()
             await asyncio.sleep(2)
     async def request(self,method,params):
+        if method=='quiescence.retention':return self.retention.read(params)
+        if method=='quiescence.managedFiles':return self.retention.read(params,managed=True)
+        if method=='snapshot.inspect':return {'receipt':self.snapshots.receipt(params.get('commandId')),'replayed':False}
+        if method=='snapshot.read':return self.snapshots.read(params)
+        if method=='quiescence.snapshot':return self.snapshots.capture(params)
+        if method=='quiescence.abortAdmission':
+            result=self.intake.abort_admission(params,owner_id=params['ownerId'],pending=len(self.schedules.pending)+len(self.observations.tasks))
+            if self.intake.fence is None:self.snapshot_live=None
+            return result
+        if method=='quiescence.admissionAbortReceipt':return self.intake.admission_abort_receipt(params,owner_id=params['ownerId'])
         if method=='quiescence.acquire':
+            if params.get('purpose')=='service-stop' and getattr(self.intake,'SERVICE_STOP_VERSION',0)!=1:return {'acquired':False,'executed':False,'reason':'service-stop-unavailable'}
+            fresh=self.intake.fence is None
             value=self.intake.acquire(params,pending=len(self.schedules.pending)+len(self.observations.tasks))
+            if fresh and value['acquired']:self.snapshot_live=dict(params)
             if not value['acquired']:
                 self.awaiting_idle=True
                 for task in self.schedules.pending|set(self.observations.tasks.values()):
                     task.add_done_callback(lambda _task:asyncio.create_task(self.maybe_idle()))
             return value
-        if method=='quiescence.release':return self.intake.release(params)
+        if method=='quiescence.release':
+            self.snapshot_live=None
+            if params.get('purpose')=='service-stop' and getattr(self.intake,'SERVICE_STOP_VERSION',0)!=1:raise ValueError('Service-stop release unavailable in installed library')
+            return self.intake.release(params)
         if method=='quiescence.inspect':return {'intakeClosed':bool(self.intake.fence),'fence':self.intake.fence,'activeRequests':self.intake.calls,'background':self.intake.background}
         readonly=self.intake.readonly(method,params)
         if self.intake.fence and not readonly and method!='start':raise ValueError('Owner intake is closed; no new operation was admitted')
@@ -98,7 +125,9 @@ class Owner:
     async def _request(self,method,params):
         if method in {'exportTransferEvidence','stageTransferEvidence','activateTransferEvidence','readTransferEvidence'}:
             return getattr(self.transfer,{'exportTransferEvidence':'export','stageTransferEvidence':'stage','activateTransferEvidence':'activate','readTransferEvidence':'read'}[method])(params)
-        if method=='initialize':return {'protocolVersion':1,'scheduledAdmission':'host','actions':list(self.schemas)}
+        if method=='initialize':
+            from .snapshots import support
+            return {'protocolVersion':1,'scheduledAdmission':'host','quiescence':{'version':1,'retentionHide':{'version':1},'managedFiles':{'version':1,'preservesCanonical':True},**({'snapshots':{'version':1,'coverage':'owner-sqlite-stores','activationProvided':False}} if support() else {}),**({'admissionAbort':{'version':1}} if getattr(self.intake,'ADMISSION_ABORT_VERSION',0)==1 else {}),**({'serviceStop':{'version':1}} if getattr(self.intake,'SERVICE_STOP_VERSION',0)==1 else {})},'actions':list(self.schemas)}
         if method=='actions':return self.schemas
         if method=='start':self.observations_enabled=params.get('observations') is True;self.start();return {'started':True}
         if method=='observe':return await self.operations.observe(params['session'],params['nativeSessionId'],params['event'])
@@ -144,7 +173,7 @@ class Owner:
             return await self.operations.dispatch(name,args,origin)
         raise ValueError('Unknown owner method')
     async def close(self):
-        self.closed=True
+        self.closed=True;self.snapshots.close()
         if self.tick_task:self.tick_task.cancel();await asyncio.gather(self.tick_task,return_exceptions=True)
         await self.observations.close();await self.schedules.close();await self.operations.close();self.questions.close();self.transfer.close()
         if self._historical:self._historical.close()

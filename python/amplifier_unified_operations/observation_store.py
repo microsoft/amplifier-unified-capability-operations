@@ -4,27 +4,76 @@ import hashlib
 import hmac
 import json
 import os
+import re
+from pathlib import Path
 import secrets
 import sqlite3
+import stat
 
 
 def encoded(value):return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)
 def digest(value):return hashlib.sha256(encoded(value).encode()).hexdigest()
 
+
+_TABLES = {'records': 'CREATE TABLE records(kind TEXT,id TEXT,session TEXT,watch TEXT,state TEXT,due '
+            'REAL,created REAL,body TEXT,PRIMARY KEY(kind,id))',
+ 'commands': 'CREATE TABLE commands(session TEXT,id TEXT,fingerprint TEXT,watch TEXT,receipt '
+             'TEXT,PRIMARY KEY(session,id))',
+ 'terminals': 'CREATE TABLE terminals(watch TEXT PRIMARY KEY,input TEXT UNIQUE)'}
+
+def _open_authority(path):
+    """Validate retained authority read-only before opening a writer."""
+    path = Path(path).absolute()
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for candidate in (path, *(Path(str(path) + suffix) for suffix in ("-wal", "-shm", "-journal"))):
+        if os.path.lexists(candidate) and not stat.S_ISREG(candidate.lstat().st_mode):
+            raise ValueError("Authority database and sidecars must be regular files, without symlinks")
+    new = not os.path.lexists(path)
+    if new and any(os.path.lexists(str(path) + suffix) for suffix in ("-wal", "-shm", "-journal")):
+        raise ValueError("Retained authority sidecar has no main database")
+    legacy = False
+    if not new:
+        reader = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
+        try:
+            names = tuple(_TABLES)
+            found = {name: (kind, sql) for name, kind, sql in reader.execute(
+                "SELECT name,type,substr(sql,1,4097) FROM sqlite_master WHERE name IN (" + ",".join("?" for _ in names) + ")", names)}
+            normalize = lambda sql: re.sub(r"\s+", "", sql).lower().replace("ifnotexists", "")
+            for name, expected in _TABLES.items():
+                actual = found.get(name)
+                if actual is None or actual[0] != "table" or not isinstance(actual[1], str) or len(actual[1]) >= 4097:
+                    raise ValueError("Missing or unsupported authority schema: " + name)
+                if name == "commands" and normalize(actual[1]) == normalize('CREATE TABLE commands(session TEXT,id TEXT,fingerprint TEXT,watch TEXT,PRIMARY KEY(session,id))'):
+                    legacy = True
+                elif normalize(actual[1]) not in {normalize(expected), normalize('CREATE TABLE commands(session TEXT,id TEXT,fingerprint TEXT,watch TEXT,PRIMARY KEY(session,id), receipt TEXT)')}:
+                    raise ValueError("Unsupported authority schema: " + name)
+                reader.execute("SELECT * FROM " + name + " LIMIT 0")
+        finally:
+            reader.close()
+    else:
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
+    db = sqlite3.connect(path.as_uri() + "?mode=rw", uri=True)
+    try:
+        path.chmod(0o600)
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("PRAGMA synchronous=FULL")
+        if new:
+            db.executescript("BEGIN;" + ";".join(_TABLES.values()) + ";COMMIT;")
+        elif legacy:
+            db.execute("ALTER TABLE commands ADD COLUMN receipt TEXT")
+        db.executescript("CREATE INDEX IF NOT EXISTS records_scope ON records(kind,session,created,id);CREATE INDEX IF NOT EXISTS records_watch ON records(kind,watch,created,id);CREATE INDEX IF NOT EXISTS records_due ON records(kind,state,due,id);CREATE INDEX IF NOT EXISTS outbox_due ON records(due,id) WHERE kind='outbox' AND state IN ('pending','waiting_worker','accepted');")
+    except BaseException:
+        db.close()
+        raise
+    return db
+
+
 class Store:
     def __init__(self,path):
-        self.db=sqlite3.connect(path);self.db.row_factory=sqlite3.Row;self.secret=secrets.token_bytes(32)
-        self.db.executescript('''
-        PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
-        CREATE TABLE IF NOT EXISTS records(kind TEXT,id TEXT,session TEXT,watch TEXT,state TEXT,due REAL,created REAL,body TEXT,PRIMARY KEY(kind,id));
-        CREATE INDEX IF NOT EXISTS records_scope ON records(kind,session,created,id);
-        CREATE INDEX IF NOT EXISTS records_watch ON records(kind,watch,created,id);
-        CREATE INDEX IF NOT EXISTS records_due ON records(kind,state,due,id);
-        CREATE INDEX IF NOT EXISTS outbox_due ON records(due,id) WHERE kind='outbox' AND state IN ('pending','waiting_worker','accepted');
-        CREATE TABLE IF NOT EXISTS commands(session TEXT,id TEXT,fingerprint TEXT,watch TEXT,receipt TEXT,PRIMARY KEY(session,id));
-        CREATE TABLE IF NOT EXISTS terminals(watch TEXT PRIMARY KEY,input TEXT UNIQUE);
-        ''');os.chmod(path,0o600)
-        if 'receipt' not in {row['name'] for row in self.db.execute('PRAGMA table_info(commands)')}:self.db.execute('ALTER TABLE commands ADD COLUMN receipt TEXT')
+        self.db = _open_authority(path)
+        self.db.row_factory = sqlite3.Row
+        self.secret = secrets.token_bytes(32)
         # The parent owns an exclusive process lease before constructing this store.
         with self.db:
             self.db.execute("UPDATE records SET state='abandoned_read',body=json_set(body,'$.phase','abandoned_read') WHERE kind='run' AND state='reading'")
