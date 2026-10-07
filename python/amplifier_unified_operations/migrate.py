@@ -56,9 +56,13 @@ def import_page(source,destination,*,source_session,session,kind,after=0,limit=2
                     digest=hashlib.sha256(raw.encode()).hexdigest()
                     try:
                         value=json.loads(raw)
-                        if not isinstance(value,dict) or value.get('sessionId')!=source_session or not isinstance(value.get('id'),str):raise ValueError('Unbound source record')
+                        # Old OperationRequests serializes requestId; its SQL id
+                        # column does not add an id field to the retained body.
+                        identity_field='requestId' if kind=='operation-request' else 'id'
+                        if not isinstance(value,dict) or value.get('sessionId')!=source_session or not isinstance(value.get(identity_field),str):raise ValueError('Unbound source record')
                         record_id=hashlib.sha256(json.dumps([source_id,kind,rowid,digest,session]).encode()).hexdigest()
                         summary={key:str(value[key])[:500] for key in ('id','title','name','prompt','state','phase','status') if key in value}
+                        summary['id']=value[identity_field][:500]
                         prior=history.db.execute('SELECT id FROM records WHERE id=?',(record_id,)).fetchone()
                         classification='already-imported' if prior else 'imported-historical'
                     except (ValueError,TypeError):classification='invalid-source-retained';record_id=None

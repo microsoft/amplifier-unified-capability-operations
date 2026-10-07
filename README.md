@@ -197,6 +197,15 @@ Schedule preview optionally supplies a bounded trusted `destinationSummary`
 guard; raw provider credentials or private configuration are not exposed.
 This uses Foundation scheduling's public `command_receipt` API.
 
+Legacy operation-request bodies use `requestId`, while the other retained
+collections use `id`. Import retains the original body and exposes that identity
+in its history summary, including uncertain operation outcomes. The installed
+wheel was qualified against 16 records across all nine collections written by
+actual 0.20.56 serializers: all exact bodies survived, another session stayed
+excluded, repeated imports were idempotent, the four source databases were
+unchanged, and no execution callbacks or active schedules were created. This
+checks historical retention only; future schedule activation remains separate.
+
 ## Held quiescence for updates and recovery
 
 `quiescenceParticipant(ownerId)` is a trusted composition port, separate from
