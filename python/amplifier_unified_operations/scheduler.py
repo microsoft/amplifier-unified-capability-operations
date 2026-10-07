@@ -150,6 +150,13 @@ class Scheduler:
                 run=self.store.transition(sid,run['id'],['creating'],'creating',self.clock(),destinationSessionId=target)
                 task=(await self.host('nativeControl',{'session':target,'operation':'task.create','args':{'objective':schedule['prompt'],'maxTurns':schedule['newTaskMaxTurns'],'commandId':run['id']+':task','expectedRevision':0}})).get('task')
                 if not task:raise ValueError('Destination task creation was not confirmed')
+                # Creating the native task mounts the copied configuration. Capture its
+                # admitted values after that initialization, while still refusing any
+                # intervening execution or interruption in the new destination.
+                initialized=await self.host('inspectSession',{'session':target})
+                if any(initialized[key]!=session[key] for key in ('executionRevision','interruptionRevision')):
+                    raise ValueError('Destination execution changed while preparing its task')
+                session=initialized
             current=self.store.get(sid,schedule['id'])
             owner=await self.host('inspectSession',{'session':sid})
             if not self.store.owns(self.clock()) or current['status']!='active' or current['revision']!=run['scheduleRevision'] or await self.dependency(owner,task if target==sid else None,schedule):

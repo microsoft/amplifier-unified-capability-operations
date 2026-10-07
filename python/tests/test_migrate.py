@@ -46,6 +46,26 @@ def test_repeat_is_idempotent_and_conflicting_mapping_is_retained(tmp_path):
     try:assert len(history.page(SID,{})['items'])==3
     finally:history.close()
 
+def test_legacy_operation_requests_keep_request_identity_and_unknown_outcome(tmp_path):
+    source=tmp_path/'operations.sqlite3'
+    db=sqlite3.connect(source)
+    db.execute('CREATE TABLE operation_requests(session_id TEXT,id TEXT,signature TEXT,value TEXT,PRIMARY KEY(session_id,id))')
+    record={'requestId':'original-request','sessionId':'chosen','action':'operation.start',
+            'state':'outcome_unknown','createdAt':1700000000,'updatedAt':1700000001}
+    db.execute('INSERT INTO operation_requests VALUES(?,?,?,?)',('chosen','original-request','saved-signature',json.dumps(record)))
+    db.commit();db.close();before=source.read_bytes();target=tmp_path/'owner'
+    result=import_page(source,target,source_session='chosen',session=SID,kind='operation-request')
+    assert result['items'][0]['classification']=='imported-historical'
+    history=HistoricalRecords(target/'legacy.sqlite3')
+    try:
+        item=history.page(SID,{})['items'][0]
+        assert item['summary']['id']=='original-request'
+        saved=history.read(SID,item['id'])
+        assert saved['record']==record and saved['controlAvailable'] is False
+        assert saved['executionAuthority'] is False and saved['replayed'] is False
+    finally:history.close()
+    assert source.read_bytes()==before
+
 def test_invalid_and_oversized_source_records_remain_classified_without_body_loading(tmp_path):
     source=tmp_path/'legacy.sqlite';legacy(source)
     db=sqlite3.connect(source);db.execute('INSERT INTO schedules VALUES(?,?,?)',('bad','chosen','{bad'))

@@ -158,3 +158,25 @@ async def test_recurring_schedule_advances_only_its_own_admission_revision(owned
     now[0]=230;await owner.schedules.tick();await settle(owner)
     assert len([1 for m,_ in host.calls if m=='submitScheduled'])==2
     assert owner.schedules.store.get(SID,schedule['id'])['status']=='needs_review'
+
+@pytest.mark.parametrize('intervening_execution',[False,True])
+async def test_new_task_admission_captures_mounted_configuration_without_accepting_work_races(owned,intervening_execution):
+    owner,host,now,_=owned
+    destination={**host.session,'uri':'ahp-session:/destination','configurationHash':'unmounted'}
+    async def boundary(method,args):
+        if method=='inspectSession' and args['session']==destination['uri']:
+            return destination.copy()
+        result=await host(method,args)
+        if method=='nativeControl' and args['operation']=='task.create':
+            destination['configurationHash']='mounted-copy'
+            if intervening_execution:destination['executionRevision']+=1
+        if method=='submitScheduled':
+            assert args['input']['expectedConfigurationHash']=='mounted-copy'
+        return result
+    owner.schedules.host=boundary
+    await create(owner,destination='new_task',newTaskMaxTurns=2);now[0]=110
+    await owner.schedules.tick();await settle(owner)
+    submissions=[a for m,a in host.calls if m=='submitScheduled']
+    assert len(submissions)==(0 if intervening_execution else 1)
+    run=owner.schedules.store.run_page(SID)['items'][0]
+    assert run['phase']==('unknown' if intervening_execution else 'completed')
