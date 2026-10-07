@@ -361,6 +361,30 @@ Main and existing sidecars must be regular files without symlinks before SQLite
 is called, so retained FIFOs cannot block startup. Callers serialize storage
 lifecycle changes; this is not an adversarial VFS or path-swap guarantee.
 
+## Reviewed legacy question adoption
+
+`python -m amplifier_unified_operations.adopt_questions --destination OWNER
+--request PRIVATE_JSON` adopts an explicitly reviewed page of questions already
+retained by the historical importer. The private request contains `session`,
+`command_id`, `records` (one to fifty exact `{id, sha256}` historical references),
+and `retirement_review_digest`. Trusted distribution composition must establish
+the original native-to-AHP session mapping and keep the old source retired. The
+digest records that operator review; it is not independent process-stop evidence.
+
+The offline operation holds the owner's exclusive lock, refuses retained intake
+fences, rechecks original bytes and validates the supported question format before
+committing the page and its receipt together. It retains original question IDs,
+revisions, options, answers, dependencies and supersession links. Pending questions
+become ordinary questions in the destination UI. A new explicit answer uses the
+normal shared action and native admission path. Closed answers cannot be delivered
+again; an old `sending` answer becomes `unknown`. Unrelated destination records
+are unchanged. Exact retries inspect the saved result and cannot overwrite a later
+answer. Conflicting commands or IDs refuse without partial adoption.
+
+No host callback, inference, schedule or old answer is started by adoption. This
+operator interface is not exposed to clients or agents. Historical imports alone
+remain display-only; schedules and observations require their own adoption review.
+
 ## Pre-retirement distribution admission abort
 
 The trusted Host participant forwards `abortAdmission(context_with_proof)` to the
