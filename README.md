@@ -383,7 +383,43 @@ answer. Conflicting commands or IDs refuse without partial adoption.
 
 No host callback, inference, schedule or old answer is started by adoption. This
 operator interface is not exposed to clients or agents. Historical imports alone
-remain display-only; schedules and observations require their own adoption review.
+remain display-only; other record types require their own adoption review.
+
+## Reviewed legacy schedule adoption
+
+`python -m amplifier_unified_operations.adopt_schedules --source SEALED_SQLITE
+--destination OWNER --request PRIVATE_JSON` adopts one selected original schedule
+and its complete run history. The private request contains `source_sha256`,
+`source_session`, `session_mapping` (original native IDs to distinct AHP URIs),
+`schedule_id`, `command_id`, and `retirement_review_digest`. Every linked run
+destination requires an explicit mapping. Distribution composition owns mapping
+verification and retirement of the original writer. The source must be a regular,
+sidecar-free, sealed image outside the destination, at most 64 MiB. An unsupported
+source remains intact for a larger reviewed migration; it is never partly adopted.
+
+The importer verifies the reviewed image digest before and after reading. It
+requires a complete bounded selected history (at most 10,000 runs, 128 KiB per
+record and 32 MiB total), consistent stored identities, supported timing and valid
+states. It retains exact original bodies in the shared historical view. Schedule,
+run and receipt writes commit atomically under the offline owner's exclusive lock;
+failure may leave historical evidence but cannot partly adopt execution authority.
+Existing identities, conflicting receipts, retained fences or a live owner refuse.
+Retries read the original receipt without overwriting subsequent user changes.
+
+Active schedules arrive as `needs_review`, with no due time. Paused, cancelled and
+completed states remain so. Claimed, creating, submitting, accepted and running
+old runs become `unknown`; existing unknowns stay unknown. Completed run evidence,
+original input IDs and mapped destination links survive. No old lease or executable
+configuration is adopted. Startup performs no submission or old notification.
+The existing user/agent schedule actions require reconciliation of unknown runs,
+a preview against the current conversation and explicit activation of future
+timing. Historical authorizations are retained as evidence, not renewed permission.
+
+This adapter follows the existing main `amplifier_web.schedules.Schedules` record
+contract and shared Foundation `amplifier_scheduling.ScheduleStore`; no second
+scheduler or time policy is introduced. Original application creation/serialization,
+installed-owner migration and compiled browser acceptance are separately qualified.
+General switch orchestration and observation-watch adoption remain separate work.
 
 ## Pre-retirement distribution admission abort
 
