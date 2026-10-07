@@ -70,14 +70,15 @@ def _open_authority(path):
 
 
 class Store:
-    def __init__(self,path):
+    def __init__(self,path,*,recover=True):
         self.db = _open_authority(path)
         self.db.row_factory = sqlite3.Row
         self.secret = secrets.token_bytes(32)
         # The parent owns an exclusive process lease before constructing this store.
-        with self.db:
-            self.db.execute("UPDATE records SET state='abandoned_read',body=json_set(body,'$.phase','abandoned_read') WHERE kind='run' AND state='reading'")
-            self.db.execute("UPDATE records SET state='unknown',body=json_set(body,'$.phase','unknown','$.detail','Owner restarted; admission is uncertain and will not replay') WHERE kind='outbox' AND state='submitting'")
+        if recover:
+            with self.db:
+                self.db.execute("UPDATE records SET state='abandoned_read',body=json_set(body,'$.phase','abandoned_read') WHERE kind='run' AND state='reading'")
+                self.db.execute("UPDATE records SET state='unknown',body=json_set(body,'$.phase','unknown','$.detail','Owner restarted; admission is uncertain and will not replay') WHERE kind='outbox' AND state='submitting'")
     def put(self,kind,row):
         raw=encoded(row)
         if len(raw.encode())>128*1024:raise ValueError('Complete observation record exceeds128KiB')
@@ -131,6 +132,15 @@ class Store:
         row=self.db.execute('SELECT fingerprint,watch FROM commands WHERE session=? AND id=?',(sid,identity)).fetchone()
         if row and row['fingerprint']!=intent:raise ValueError('Observation request identity reused with different intent')
         return self.get('watch',row['watch'],sid) if row else None
+    def legacy_request(self,sid,operation,request):
+        # Original command IDs hash the old native scope. Preserve that identity
+        # across the explicit AHP mapping, without inventing a missing revision.
+        sources=self.db.execute("SELECT DISTINCT json_extract(body,'$.legacyImport.sourceSession') FROM records WHERE kind='watch' AND session=? AND json_extract(body,'$.legacyImport.sourceSession') IS NOT NULL",(sid,))
+        for source, in sources:
+            key='observation.legacyCommand:'+digest([source,operation,request])
+            row=self.db.execute('SELECT watch,receipt FROM commands WHERE session=? AND id=?',(sid,key)).fetchone()
+            if row:return {'watch':self.get('watch',row['watch'],sid),'receipt':json.loads(row['receipt'])}
+        return None
     def phase(self,item,phase,**extra):
         item={**item,'phase':phase,**extra}
         with self.db:self.put('outbox',item)
