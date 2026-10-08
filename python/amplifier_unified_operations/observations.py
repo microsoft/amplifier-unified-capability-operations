@@ -82,6 +82,9 @@ class Observations:
         if operation=='observation.request':
             requested=args.get('operation','observation.create')
             row=self.store.db.execute('SELECT watch,receipt FROM commands WHERE session=? AND id=?',(sid,requested+':'+args['requestId'])).fetchone()
+            if row is None:
+                legacy=self.store.legacy_request(sid,requested,args['requestId'])
+                if legacy:return legacy
             return {'watch':self.store.get('watch',row['watch'],sid) if row else None,'receipt':(json.loads(row['receipt']) if row['receipt'] else {'status':'legacy_observed','watchId':row['watch']}) if row else None}
         if operation=='observation.preview':return await self.review(sid,await self.configuration(sid,args))
         if operation=='observation.qualify':
@@ -93,6 +96,8 @@ class Observations:
         if not isinstance(request,str) or not 1<=len(request)<=200:raise ValueError('Stable bounded watch request identity required')
         key=operation+':'+request;intent=digest([{k:v for k,v in args.items() if k!='previewHash'},origin,client])
         async with self.lock:
+            if self.store.legacy_request(sid,operation,request):
+                raise ValueError('This original watch command is retained from before migration. Inspect its receipt; it cannot be replayed.')
             previous_result=self.store.command(sid,key,intent)
             if previous_result:return {'watch':previous_result,'duplicate':True}
             previous=None if operation=='observation.create' else self.store.get('watch',args['id'],sid)

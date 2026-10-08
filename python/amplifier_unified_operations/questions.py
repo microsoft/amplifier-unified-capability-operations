@@ -76,17 +76,20 @@ def _open_authority(path):
 
 
 class Questions:
-    def __init__(self, path, host, changed, clock=time.time):
+    def __init__(self, path, host, changed, clock=time.time, *, recover_deliveries=True):
         self.host, self.changed, self.clock = host, changed, clock
         self.lock = asyncio.Lock()
         self.secret = secrets.token_bytes(32)
         self.db = _open_authority(path)
         self.db.row_factory = sqlite3.Row
-        with self.db:
-            self.db.execute("""UPDATE questions SET delivery='unknown', value=json_set(value,
-                '$.delivery.status','unknown','$.delivery.message',
-                'Owner restarted before delivery confirmation; answer retained without replay.')
-                WHERE delivery='sending'""")
+        # A running owner reconciles interrupted sends. Offline selected imports
+        # must leave unrelated destination records unchanged.
+        if recover_deliveries:
+            with self.db:
+                self.db.execute("""UPDATE questions SET delivery='unknown', value=json_set(value,
+                    '$.delivery.status','unknown','$.delivery.message',
+                    'Owner restarted before delivery confirmation; answer retained without replay.')
+                    WHERE delivery='sending'""")
 
     def get(self, sid, identity):
         row = self.db.execute('SELECT value FROM questions WHERE session=? AND id=?', (sid, identity)).fetchone()
@@ -189,6 +192,8 @@ class Questions:
 
     def authorize_delivery(self, sid, args):
         record = self.get(sid, args.get('questionId'))
+        if record.get('legacyImport', {}).get('deliveryRetained'):
+            raise ValueError('A retained legacy answer cannot authorize another delivery')
         if record['status'] != 'answered' or (record.get('delivery') or {}).get('status') not in {'sending', 'accepted'}:
             raise ValueError('No confirmed saved answer permits this delivery')
         expected = self.delivery_input(record)
