@@ -143,7 +143,7 @@ class Owner:
                 page=self.schedules.list(sid,{'limit':25});return {'schedules':{sid:page['items']},'schedulePage':{'nextCursor':page['nextCursor']}}
             if topic=='operations':return {'operations':{sid:await self.operations.dispatch('operations.list',{'sessionId':sid,'limit':25},'ui')}}
             if topic=='questions':
-                page=self.questions.page(sid,{'limit':5});return {'questions':{sid:page['items']},'questionPage':{'nextCursor':page['nextCursor']}}
+                page=self.questions.page(sid,{'limit':5,'status':'pending'});unconfirmed=self.questions.page(sid,{'limit':5,'status':'unconfirmed'});return {'questions':{sid:[*page['items'],*unconfirmed['items']]},'questionPage':{'nextCursor':page['nextCursor'],'unconfirmedCursor':unconfirmed['nextCursor'],'historyPaging':True}}
             if topic=='observations':
                 page=self.observations.store.page('watch',sid,limit=5);return {'observations':{sid:page['items']},'observationPage':{'nextCursor':page['nextCursor']}}
             raise ValueError('Unknown topic')

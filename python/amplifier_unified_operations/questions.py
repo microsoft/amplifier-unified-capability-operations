@@ -67,6 +67,8 @@ def _open_authority(path):
         if new:
             db.executescript("BEGIN;" + ";".join(_TABLES.values()) + ";COMMIT;")
         db.executescript('CREATE INDEX IF NOT EXISTS questions_scope ON questions(session,created,id);CREATE INDEX IF NOT EXISTS questions_status ON questions(session,status,created,id);CREATE INDEX IF NOT EXISTS questions_delivery ON questions(delivery);')
+        db.executescript("CREATE INDEX IF NOT EXISTS questions_closed ON questions(session,created,id) WHERE status<>'pending';"
+                         "CREATE INDEX IF NOT EXISTS questions_unconfirmed ON questions(session,created,id) WHERE status='answered' AND coalesce(delivery,'unknown')<>'accepted';")
     except BaseException:
         db.close()
         raise
@@ -115,11 +117,16 @@ class Questions:
         if type(limit) is not int or not 1 <= limit <= 50 or type(offset) is not int or not 0 <= offset <= 1000:
             raise ValueError('Use bounded question pages and cursors beyond offset 1000')
         status = args.get('status')
-        if status is not None and status not in {'pending', 'answered', 'cancelled', 'superseded'}:
+        if status is not None and status not in {'pending', 'answered', 'cancelled', 'superseded', 'closed', 'unconfirmed'}:
             raise ValueError('Invalid question status')
+        descending = status == 'closed'
         scope = hashlib.sha256(encoded([sid, status]).encode()).hexdigest()
         where, values = ['session=?'], [sid]
-        if status:
+        if status == 'closed':
+            where.append("status<>'pending'")
+        elif status == 'unconfirmed':
+            where.append("status='answered' AND coalesce(delivery,'unknown')<>'accepted'")
+        elif status:
             where.append('status=?'); values.append(status)
         if args.get('cursor'):
             if offset:
@@ -134,11 +141,14 @@ class Questions:
                 page = json.loads(raw[32:])
                 if page['scope'] != scope:
                     raise ValueError()
-                where.append('(created>? OR (created=? AND id>?))'); values.extend([page['at'], page['at'], page['id']])
+                op = '<' if descending else '>'
+                where.append(f'(created,id){op}(?,?)'); values.extend([page['at'], page['id']])
             except (ValueError, TypeError, KeyError):
                 raise ValueError('Question cursor is invalid, belongs to another scope, or expired after restart') from None
         rows, total, more = [], 0, False
-        for row in self.db.execute('SELECT * FROM questions WHERE ' + ' AND '.join(where) + ' ORDER BY created,id LIMIT ? OFFSET ?', (*values, limit + 1, offset)):
+        order = 'created DESC,id DESC' if descending else 'created,id'
+        index = ' INDEXED BY questions_' + status if status in {'closed', 'unconfirmed'} else ''
+        for row in self.db.execute('SELECT * FROM questions' + index + ' WHERE ' + ' AND '.join(where) + ' ORDER BY ' + order + ' LIMIT ? OFFSET ?', (*values, limit + 1, offset)):
             size = len(row['value'].encode())
             if len(rows) >= limit or (rows and total + size > 512 * 1024):
                 more = True
