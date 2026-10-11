@@ -55,8 +55,13 @@ changed arguments/actor are rejected.
 
 Topic `schedules`: `{schedules:{[uri]:rows},schedulePage:{nextCursor}}`, initial25
 rows/last10 runs each. `schedule.list/read` accept `limit<=100,cursor` and return
-explicit `nextCursor`; cursors and edit drafts belong to the client. Linked fresh
-task sessions may read their source schedule as readOnly and report only their
+explicit `nextCursor`; cursors and edit drafts belong to the client.
+`schedule.list` and `schedule.read` may target another registered conversation
+through `sessionId` after the Host authorizes both the caller and that target.
+These results identify the target and are `readOnly`; they do not select a chat,
+load its history, start a native runtime, or publish a caller-channel snapshot.
+Every schedule mutation remains bound to the caller's trusted session context.
+Linked fresh task sessions may read their source schedule as readOnly and report only their
 own admitted run. Topic `operations`: `{operations:{[uri]:{operations,requests,
 nextCursor,capabilities}}}`. `operations.list` accepts an opaque bounded cursor.
 Output reads remain byte-bounded and expose gaps honestly. Topic records are

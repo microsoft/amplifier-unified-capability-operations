@@ -119,7 +119,7 @@ export class OperationsCapabilities {
    default:throw Error('Unknown callback');
   }
  }
- private async authorize(scope:string,context:Context){if(!scope?.startsWith('ahp-session:/'))throw Error('Selected session scope required');if(context.session&&sessionOf(context)!==scope)throw Error('Session scope mismatch');await this.options.inspectSession(scope,{clientId:context.clientId});}
+ private async authorize(scope:string,context:Context){if(typeof scope!=='string'||!scope.startsWith('ahp-session:/')||scope.length>8192)throw Error('Selected session scope required');if(context.session&&sessionOf(context)!==scope)throw Error('Session scope mismatch');await this.options.inspectSession(scope,{clientId:context.clientId});}
  private record(topic:string,scope:string,data:Json){if(Buffer.byteLength(JSON.stringify(data))>768*1024)throw Error('Requested operation page exceeds768KiB; use narrower action page');return {topic,scope,revision:++this.revision,data};}
  /** Start only the indexed due scheduler, with no native runtimes on idle boot. */
  start=async()=>this.owner.request('start',{observations:!!this.manifest.topics.observations});
@@ -127,9 +127,15 @@ export class OperationsCapabilities {
  read=async(request:{uri:string;topic:string;scope:string;clientId:string})=>{if(!(request.topic in names))throw Error('Unknown operation topic');await this.authorize(request.scope,{clientId:request.clientId});return this.record(request.topic,request.scope,await this.owner.request('snapshot',{session:request.scope,topic:request.topic}));};
  action=async(request:Json,context:Context)=>{
   const scope=request.channel,advertised=this.manifest.actions[request.operation];if(request.version!==1||!advertised||advertised.topic!==request.topic)throw Error('Unadvertised operation action');await this.authorize(scope,context);
+  // A peer schedule read keeps the caller channel and its selected conversation
+  // intact. Only these two passive operations may target another registered chat.
+  const peerRead=['schedule.list','schedule.read'].includes(request.operation)&&request.args?.sessionId!==undefined&&request.args.sessionId!==scope;
+  const target=peerRead?request.args.sessionId:scope;
+  if(peerRead)await this.authorize(target,{clientId:context.clientId});
   let result:Json;
-  try{result=await this.owner.request('action',{session:scope,operation:request.operation,args:request.args??{},origin:context.origin??'ui',clientId:context.clientId,commandId:request.commandId});}
+  try{result=await this.owner.request('action',{session:target,operation:request.operation,args:request.args??{},origin:context.origin??'ui',clientId:context.clientId,commandId:request.commandId});}
   catch(error){if(request.operation.startsWith('schedule.')&&(error as Error&{refusal?:boolean}).refusal)return {accepted:false,result:{executed:false,reason:(error as Error).message},updates:[],invalidate:[]};throw error;}
+  if(peerRead)result={...result,sessionId:target,readOnly:true};
   const read=/\.(list|read|wait|status|request|preview|report|observers)$/.test(request.operation);
   return {accepted:true,result,updates:read?[]:[this.record(request.topic,scope,await this.owner.request('snapshot',{session:scope,topic:request.topic}))],invalidate:[],_meta:{'amplifier.dev/operation':{id:request.commandId}}};
  };
