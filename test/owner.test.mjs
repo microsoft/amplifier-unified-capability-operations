@@ -5,6 +5,26 @@ import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import {createOperationsCapabilities} from '../dist/index.js';
 const sid='ahp-session:/fixture';
+test('peer schedule inspection reads the registered target without activation or mutation authority',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'peer-schedules-')),config=join(directory,'config.json'),peer='ahp-session:/peer';await writeFile(config,JSON.stringify({dataDir:join(directory,'owner')}));
+ const inspected=[],controls=[],invalidations=[];
+ const provider=createOperationsCapabilities({owner:{command:process.env.OPERATIONS_OWNER_PYTHON??resolve('python/.venv/bin/python'),args:['-I','-m','amplifier_unified_operations.server','--config',config]},inspectSession:async(uri,context)=>{inspected.push({uri,context});if(![sid,peer].includes(uri))throw Error('Conversation is not registered');return {uri,status:'idle',configurationHash:'kept',interruptionRevision:0,executionRevision:0};},
+  readSessionContext:async()=>{throw Error('No transcript hydration');},nativeControl:async(uri,operation)=>{controls.push({uri,operation});if(operation==='task.get')return {task:{id:'peer-task',revision:1,status:'active'}};throw Error('No native execution');},nativeControlExisting:async()=>{throw Error('No live native access');},createSession:async()=>{throw Error('No session creation');},submitScheduled:async()=>{throw Error('No scheduled input');},waitForTurn:async()=>{throw Error('No active turn');},onInvalidate:(...args)=>invalidations.push(args)});
+ const invoke=(caller,operation,args={},origin='agent')=>provider.action({version:1,channel:caller,topic:'schedules',operation,args,commandId:crypto.randomUUID()},{clientId:'peer-reader',session:caller,origin});
+ try{
+  const args={prompt:'Keep this original schedule',kind:'monitor',spec:{kind:'interval',timezone:'UTC',startAt:new Date(Date.now()+3600000).toISOString(),intervalSeconds:3600},notificationPolicy:'changes',missedRunPolicy:'latest'};
+  const preview=(await invoke(peer,'schedule.preview',args,'ui')).result;
+  const saved=(await invoke(peer,'schedule.create',{...args,expectedRevision:0,previewHash:preview.previewHash},'ui')).result.schedule;
+  const before={controls:controls.length,invalidations:invalidations.length};
+  const listed=await invoke(sid,'schedule.list',{sessionId:peer});assert.equal(listed.result.items[0].id,saved.id);assert.equal(listed.result.readOnly,true);assert.equal(listed.result.sessionId,peer);assert.deepEqual(listed.updates,[]);
+  const read=await invoke(sid,'schedule.read',{sessionId:peer,id:saved.id});assert.deepEqual(read.result.schedule,saved);assert.equal(read.result.readOnly,true);assert.deepEqual(read.updates,[]);
+  assert.equal(inspected.at(-1).uri,peer);assert.equal(inspected.at(-1).context.clientId,'peer-reader');
+  await assert.rejects(invoke(sid,'schedule.list',{sessionId:'ahp-session:/missing'}),/not registered/);
+  for(const operation of ['pause','resume','cancel','update','report','reconcile','preview','create','request'])await assert.rejects(invoke(sid,'schedule.'+operation,{sessionId:peer,id:saved.id,expectedRevision:saved.revision}),/trusted context/);
+  assert.equal(controls.length,before.controls);assert.equal(invalidations.length,before.invalidations);
+  assert.deepEqual((await invoke(peer,'schedule.read',{id:saved.id})).result.schedule,saved);
+ }finally{await provider.close();await rm(directory,{recursive:true,force:true});}
+});
 test('real Python owner protocol: scoped schedule review, process receipts and bounded reads',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'unified-operations-'));const config=join(directory,'config.json');await writeFile(config,JSON.stringify({dataDir:join(directory,'owner')}));
  const calls=[],invalidations=[];const inspect=async uri=>{assert.equal(uri,sid);return {uri,status:'idle',configurationHash:'fixture',interruptionRevision:0,executionRevision:0};};

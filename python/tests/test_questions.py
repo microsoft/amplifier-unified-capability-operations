@@ -134,6 +134,37 @@ async def test_racing_answers_have_one_durable_winner(tmp_path):
     finally: owner.close()
 
 
+async def test_closed_pages_are_newest_first_and_unconfirmed_survives_cold_history(tmp_path):
+    async def lost(_): raise RuntimeError('Unknown delivery')
+    owner, action, calls, _, _, host, invalidate = setup(tmp_path, lost)
+    try:
+        with owner.db:
+            for number in range(10000):
+                row = owner.new(SID, question(), 'ui', 'client')
+                row.update(status='answered', createdAt=number-10000, delivery={'status':'accepted'})
+                owner.put(row)
+        current = await action('create', question())
+        answer = await action('answer', {'id':current['id'], 'expectedRevision':1, 'text':'Keep this answer'})
+        steps=[];owner.db.set_progress_handler(lambda: steps.append(1) and 0, 100)
+        attention=owner.page(SID, {'status':'unconfirmed','limit':5})
+        assert [q['id'] for q in attention['items']] == [current['id']]
+        assert len(steps)<20
+        first=owner.page(SID, {'status':'closed','limit':5})
+        assert first['items'][0]['id']==current['id']
+        second=owner.page(SID, {'status':'closed','limit':5,'cursor':first['nextCursor']})
+        assert len({q['id'] for q in first['items']+second['items']})==10
+        assert first['items'][-1]['createdAt']>second['items'][0]['createdAt']
+        with pytest.raises(ValueError,match='scope'):
+            owner.page(SID, {'status':'unconfirmed','cursor':first['nextCursor']})
+        assert owner.page('ahp-session:/other', {'status':'unconfirmed'})['items']==[]
+    finally: owner.close()
+    owner=Questions(tmp_path/'questions.sqlite3',host,invalidate)
+    try:
+        assert owner.page(SID, {'status':'unconfirmed'})['items']==[answer]
+        assert len(calls)==1
+    finally: owner.close()
+
+
 async def test_large_complete_questions_use_byte_bound_cursor_without_skipping(tmp_path):
     owner, _, _, _, _, _, _ = setup(tmp_path)
     try:

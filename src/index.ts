@@ -7,7 +7,7 @@ import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {createInterface} from 'node:readline';
 export type Json=Record<string,any>;
 export interface Context {clientId:string;origin?:'ui'|'agent';session?:string|{uri:string};}
-export interface Launcher {command:string;args?:string[];env?:Record<string,string>;cwd?:string;}
+export interface Launcher {command:string;args?:string[];env?:Record<string,string>;cwd?:string;requestTimeoutMs?:number;initializeTimeoutMs?:number;}
 export interface Options {
  owner:Launcher;
  inspectSession:(uri:string,context?:{clientId:string})=>Promise<Json>;
@@ -35,33 +35,57 @@ const sessionOf=(context:Context)=>typeof context.session==='string'?context.ses
 export class OwnerConnection {
  private process?:ChildProcessWithoutNullStreams;private ready?:Promise<void>;private next=0;private closed=false;private pending=new Map<number,{resolve:(r:any)=>void;reject:(e:Error)=>void}>();
  get admissionPending(){return this.pending.size;}
- constructor(private launcher:Launcher,private callback:(method:string,args:Json)=>Promise<any>,private changed:(scope:string,topic?:string)=>void,private idle:()=>void=()=>{}){}
+ constructor(private launcher:Launcher,private callback:(method:string,args:Json)=>Promise<any>,private changed:(scope:string,topic?:string)=>void,private idle:()=>void=()=>{}){
+  for(const timeout of [launcher.requestTimeoutMs,launcher.initializeTimeoutMs])if(timeout!==undefined&&(!Number.isInteger(timeout)||timeout<25||timeout>90000))throw Error('Owner timeout must be25–90000ms');
+ }
  private fail(message:string){this.closed=true;for(const entry of this.pending.values())entry.reject(Error(message));this.pending.clear();}
  private write(row:Json){const data=JSON.stringify(row)+'\n';if(Buffer.byteLength(data)>4_000_000)throw Error('Owner frame exceeds4MB');if(this.closed||!this.process)throw Error('Owner unavailable; uncertain work was not replayed');this.process.stdin.write(data,error=>{if(error)this.fail('Owner transport failed; outcome unknown.');});}
  private start(){
   if(this.closed)throw Error('Owner connection is closed; no automatic replay.');
   if(!this.ready)this.ready=(async()=>{
    const child=this.process=spawn(this.launcher.command,this.launcher.args??[],{cwd:this.launcher.cwd,env:{...process.env,...this.launcher.env},stdio:'pipe'});
-   child.stderr.on('data',()=>{});child.on('error',()=>this.fail('Operation owner failed to start'));child.on('exit',()=>this.fail('Operation owner exited; uncertain commands not replayed'));
+   child.stdin.on('error',()=>{this.fail('Owner input transport failed; outcome unknown');child.kill();});child.stderr.on('data',()=>{});child.on('error',()=>this.fail('Operation owner failed to start'));child.on('exit',()=>this.fail('Operation owner exited; uncertain commands not replayed'));
    let bytes=0;child.stdout.on('data',(chunk:Buffer)=>{for(const b of chunk){bytes=b===10?0:bytes+1;if(bytes>4_000_000){this.fail('Owner frame exceeded limit');child.kill();return;}}});
-   createInterface({input:child.stdout}).on('line',line=>{void this.receive(line);});
-   const value=await this.send('initialize',{});if(value.protocolVersion!==1)throw Error('Unsupported operations owner');
+   createInterface({input:child.stdout}).on('line',line=>{void this.receive(line).catch(()=>{this.fail('Malformed owner response; outcome unknown, not replayed');child.kill();});});
+   const value=await this.send('initialize',{},this.launcher.initializeTimeoutMs??5000);if(value?.protocolVersion!==1){this.fail('Unsupported operations owner');child.kill();throw Error('Unsupported operations owner');}
   })();return this.ready;
  }
  private async receive(line:string){
   let row:Json;try{row=JSON.parse(line);}catch{this.fail('Invalid owner response');this.process?.kill();return;}
+  if(!row||typeof row!=='object'||Array.isArray(row)||row.jsonrpc!=='2.0')throw Error('Malformed owner envelope');
   if(row.method==='owner/idle'){this.idle();return;}
-  if(row.method==='owner/changed'){this.changed(row.params.session,row.params.topic);return;}
+  if(row.method==='owner/changed'){
+   if(!row.params||typeof row.params!=='object'||Array.isArray(row.params)||typeof row.params.session!=='string'||(row.params.topic!==undefined&&typeof row.params.topic!=='string'))throw Error('Malformed owner notification');
+   this.changed(row.params.session,row.params.topic);return;
+  }
   if(row.method){
+   if(typeof row.method!=='string'||!['string','number'].includes(typeof row.id)||(row.params!==undefined&&(!row.params||typeof row.params!=='object'||Array.isArray(row.params))))throw Error('Malformed owner callback');
    const method=String(row.method).replace(/^host\//,'');
    try{if(!String(row.method).startsWith('host/')||!METHODS.has(method))throw Error('Unknown host callback');const result=await this.callback(method,row.params??{});this.write({jsonrpc:'2.0',id:row.id,result:result??null});}
    catch(error){if(!this.closed)this.write({jsonrpc:'2.0',id:row.id,error:{code:-32000,message:String(error instanceof Error?error.message:error)}});}return;
   }
+  if(!Number.isSafeInteger(row.id)||Object.hasOwn(row,'result')===Object.hasOwn(row,'error')||(Object.hasOwn(row,'error')&&(!row.error||typeof row.error!=='object'||typeof row.error.message!=='string'||!Number.isInteger(row.error.code))))throw Error('Malformed owner reply');
   const entry=this.pending.get(row.id);if(!entry)return;this.pending.delete(row.id);row.error?entry.reject(Object.assign(Error(row.error.message),{refusal:row.error.data?.kind==='schedule_refused'&&row.error.data?.executed===false})):entry.resolve(row.result);
  }
- private send(method:string,params:Json){if(this.pending.size>=64)throw Error('Owner request capacity reached');const id=++this.next;return new Promise<any>((resolve,reject)=>{this.pending.set(id,{resolve,reject});try{this.write({jsonrpc:'2.0',id,method,params});}catch(e){this.pending.delete(id);reject(e as Error);}});}
+ private send(method:string,params:Json,timeoutMs=this.launcher.requestTimeoutMs??90000){
+  if(this.closed)throw Error('Owner unavailable; uncertain work was not replayed');
+  if(this.pending.size>=64)throw Error('Owner request capacity reached');
+  const id=++this.next;
+  return new Promise<any>((resolve,reject)=>{
+   // A timed-out mutation may already have executed. Terminalize this channel;
+   // retain durable receipts/fences for explicit inspection after owner restart.
+   const timer=setTimeout(()=>{this.fail('Owner reply timed out; outcome unknown, not replayed');this.process?.kill();},timeoutMs);timer.unref();
+   const settle={resolve:(value:any)=>{clearTimeout(timer);resolve(value);},reject:(error:Error)=>{clearTimeout(timer);reject(error);}};
+   this.pending.set(id,settle);
+   try{this.write({jsonrpc:'2.0',id,method,params});}catch(e){this.pending.delete(id);settle.reject(e as Error);}
+  });
+ }
  async request(method:string,args:Json){await this.start();return this.send(method,args);}
- async close(){if(!this.process){this.closed=true;return;}this.process.stdin.end();await new Promise<void>(resolve=>{const timer=setTimeout(()=>{this.process?.kill();resolve();},4000);this.process!.once('exit',()=>{clearTimeout(timer);resolve();});});this.fail('Owner closed');}
+ async close(){
+  const child=this.process;this.fail('Owner closed; uncertain work was not replayed');
+  if(!child||child.exitCode!==null||child.signalCode!==null)return;
+  child.stdin.end();await new Promise<void>(resolve=>{const timer=setTimeout(()=>{child.kill('SIGKILL');resolve();},4000);child.once('exit',()=>{clearTimeout(timer);resolve();});});
+ }
 }
 export interface QuiescenceContext {fenceId:string;commandId:string;purpose:'distribution-update'|'recovery'|'service-stop'|'retention-hide'|'managed-files-disposal';instanceId:string;dataScope:string;serviceIdentity?:ServiceIdentity;}
 export interface QuiescenceProof extends Partial<ServiceReleaseFields> {verified:true;fenceId:string;commandId:string;outcome:'ready'|'unchanged';instanceId:string;dataScope:string;receiptId:string;}
@@ -95,7 +119,7 @@ export class OperationsCapabilities {
    default:throw Error('Unknown callback');
   }
  }
- private async authorize(scope:string,context:Context){if(!scope?.startsWith('ahp-session:/'))throw Error('Selected session scope required');if(context.session&&sessionOf(context)!==scope)throw Error('Session scope mismatch');await this.options.inspectSession(scope,{clientId:context.clientId});}
+ private async authorize(scope:string,context:Context){if(typeof scope!=='string'||!scope.startsWith('ahp-session:/')||scope.length>8192)throw Error('Selected session scope required');if(context.session&&sessionOf(context)!==scope)throw Error('Session scope mismatch');await this.options.inspectSession(scope,{clientId:context.clientId});}
  private record(topic:string,scope:string,data:Json){if(Buffer.byteLength(JSON.stringify(data))>768*1024)throw Error('Requested operation page exceeds768KiB; use narrower action page');return {topic,scope,revision:++this.revision,data};}
  /** Start only the indexed due scheduler, with no native runtimes on idle boot. */
  start=async()=>this.owner.request('start',{observations:!!this.manifest.topics.observations});
@@ -103,9 +127,15 @@ export class OperationsCapabilities {
  read=async(request:{uri:string;topic:string;scope:string;clientId:string})=>{if(!(request.topic in names))throw Error('Unknown operation topic');await this.authorize(request.scope,{clientId:request.clientId});return this.record(request.topic,request.scope,await this.owner.request('snapshot',{session:request.scope,topic:request.topic}));};
  action=async(request:Json,context:Context)=>{
   const scope=request.channel,advertised=this.manifest.actions[request.operation];if(request.version!==1||!advertised||advertised.topic!==request.topic)throw Error('Unadvertised operation action');await this.authorize(scope,context);
+  // A peer schedule read keeps the caller channel and its selected conversation
+  // intact. Only these two passive operations may target another registered chat.
+  const peerRead=['schedule.list','schedule.read'].includes(request.operation)&&request.args?.sessionId!==undefined&&request.args.sessionId!==scope;
+  const target=peerRead?request.args.sessionId:scope;
+  if(peerRead)await this.authorize(target,{clientId:context.clientId});
   let result:Json;
-  try{result=await this.owner.request('action',{session:scope,operation:request.operation,args:request.args??{},origin:context.origin??'ui',clientId:context.clientId,commandId:request.commandId});}
+  try{result=await this.owner.request('action',{session:target,operation:request.operation,args:request.args??{},origin:context.origin??'ui',clientId:context.clientId,commandId:request.commandId});}
   catch(error){if(request.operation.startsWith('schedule.')&&(error as Error&{refusal?:boolean}).refusal)return {accepted:false,result:{executed:false,reason:(error as Error).message},updates:[],invalidate:[]};throw error;}
+  if(peerRead)result={...result,sessionId:target,readOnly:true};
   const read=/\.(list|read|wait|status|request|preview|report|observers)$/.test(request.operation);
   return {accepted:true,result,updates:read?[]:[this.record(request.topic,scope,await this.owner.request('snapshot',{session:scope,topic:request.topic}))],invalidate:[],_meta:{'amplifier.dev/operation':{id:request.commandId}}};
  };
