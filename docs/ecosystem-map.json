@@ -1,0 +1,100 @@
+{
+  "audience": "Developers adding durable host operations",
+  "citations": [
+    {
+      "path": "README.md",
+      "ref": "0e98f1ae1db60e490a0d7354ab9d948a5cca6345",
+      "sha256": "2bff4202e2f713b532d91ab2af4e774a7f03c10f1b12a25737a88bcb5d227aeb",
+      "url": "https://github.com/microsoft/amplifier-unified-capability-operations/blob/0e98f1ae1db60e490a0d7354ab9d948a5cca6345/README.md"
+    },
+    {
+      "path": "src/index.ts",
+      "ref": "0e98f1ae1db60e490a0d7354ab9d948a5cca6345",
+      "sha256": "543715eb86f4679ba449e3eabc109840a6991ddd9b10bcb9a76291545c853f56",
+      "url": "https://github.com/microsoft/amplifier-unified-capability-operations/blob/0e98f1ae1db60e490a0d7354ab9d948a5cca6345/src/index.ts"
+    }
+  ],
+  "display_name": "Amplifier Unified Operations",
+  "edges": [
+    {
+      "from": "host",
+      "relation": "uses",
+      "to": "self"
+    },
+    {
+      "from": "self",
+      "relation": "contains",
+      "to": "provider"
+    },
+    {
+      "from": "self",
+      "relation": "contains",
+      "to": "service"
+    },
+    {
+      "from": "service",
+      "relation": "contains",
+      "to": "records"
+    },
+    {
+      "from": "provider",
+      "relation": "uses",
+      "to": "native"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "self",
+      "kind": "self",
+      "label": "Amplifier Unified Operations",
+      "repository": "microsoft/amplifier-unified-capability-operations"
+    },
+    {
+      "id": "host",
+      "kind": "external",
+      "label": "Amplifier Unified host",
+      "repository": "microsoft/amplifier-unified-host"
+    },
+    {
+      "id": "provider",
+      "kind": "internal",
+      "label": "TypeScript capability provider"
+    },
+    {
+      "id": "service",
+      "kind": "internal",
+      "label": "Private Python service"
+    },
+    {
+      "id": "records",
+      "kind": "internal",
+      "label": "Schedules, questions and records"
+    },
+    {
+      "id": "native",
+      "kind": "external",
+      "label": "Native execution and admission"
+    }
+  ],
+  "notes": [
+    "This package retains operation records; host/native runtime still own execution and admission.",
+    "No extra autonomous agent, supervisor or Conversation owner is implied.",
+    "Optional callbacks must be mounted before advertising their capabilities."
+  ],
+  "page_kind": "capability library",
+  "purpose": "Add schedules, questions, observation watches and operation tracking to a Unified host.",
+  "ref": "0e98f1ae1db60e490a0d7354ab9d948a5cca6345",
+  "repository": "microsoft/amplifier-unified-capability-operations",
+  "roles": [],
+  "start_cta": {
+    "basis": "Existing approved README route; target release assets/availability not freshly audited in this plan.",
+    "label": "Integrate operations",
+    "url": "https://github.com/microsoft/amplifier-unified-capability-operations#get-started"
+  },
+  "summary": "Optional schedules, questions, watches and operation records behind a Unified host capability.",
+  "supports_roles": [
+    "Agent Instance",
+    "Experience"
+  ],
+  "visibility": "private"
+}
