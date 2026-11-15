@@ -62,6 +62,27 @@ host boundary. [Service lifecycle](src/service-lifecycle.ts) and
 [retention integration](src/retention.ts) are for distribution owners implementing
 updates or recovery. Contributor instructions are in [AGENTS.md](AGENTS.md).
 
+
+<!-- ecosystem-map:start -->
+## Where this fits
+
+Optional schedules, questions, watches and operation records behind a Unified host capability.
+
+Supports: Agent Instance, Experience.
+
+![Ecosystem roles and component relationships](docs/ecosystem-map.svg)
+
+[Open the map](docs/ecosystem-map.svg) · [Product page source (private)](docs/product/index.html) · [Map guide](https://github.com/microsoft/amplifier-constellation/blob/main/docs/ecosystem-maps.md)
+
+<details>
+<summary>The five shared building blocks</summary>
+
+[![Experience, Conversation, Agent Instance, Connection and Tool](https://raw.githubusercontent.com/microsoft/amplifier-constellation/main/site/assets/art/building-blocks.png)](https://microsoft.github.io/amplifier-constellation/)
+
+</details>
+
+<!-- ecosystem-map:end -->
+
 ## Contributing
 
 Most contributions require you to agree to a
