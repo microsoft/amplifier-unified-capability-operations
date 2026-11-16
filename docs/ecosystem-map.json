@@ -2,16 +2,18 @@
   "audience": "Developers adding durable host operations",
   "citations": [
     {
+      "git_blob": "5f816d1ee22a688c3ed5d566189ef761cbcde46e",
       "path": "README.md",
-      "ref": "0e98f1ae1db60e490a0d7354ab9d948a5cca6345",
-      "sha256": "2bff4202e2f713b532d91ab2af4e774a7f03c10f1b12a25737a88bcb5d227aeb",
-      "url": "https://github.com/microsoft/amplifier-unified-capability-operations/blob/0e98f1ae1db60e490a0d7354ab9d948a5cca6345/README.md"
+      "ref": "2ab0bccbdb5a1d034c7afb807b4c8c2b029f70a1",
+      "sha256": "fd1dc7ccd5e989b7310c5c6ed48a45104ca3ee1a59895e16cdd05fad10238e81",
+      "url": "https://github.com/microsoft/amplifier-unified-capability-operations/blob/2ab0bccbdb5a1d034c7afb807b4c8c2b029f70a1/README.md"
     },
     {
+      "git_blob": "e3366fca3f32da94ff2b5342fdfc1a056f208766",
       "path": "src/index.ts",
-      "ref": "0e98f1ae1db60e490a0d7354ab9d948a5cca6345",
+      "ref": "2ab0bccbdb5a1d034c7afb807b4c8c2b029f70a1",
       "sha256": "543715eb86f4679ba449e3eabc109840a6991ddd9b10bcb9a76291545c853f56",
-      "url": "https://github.com/microsoft/amplifier-unified-capability-operations/blob/0e98f1ae1db60e490a0d7354ab9d948a5cca6345/src/index.ts"
+      "url": "https://github.com/microsoft/amplifier-unified-capability-operations/blob/2ab0bccbdb5a1d034c7afb807b4c8c2b029f70a1/src/index.ts"
     }
   ],
   "display_name": "Amplifier Unified Operations",
@@ -83,7 +85,7 @@
   ],
   "page_kind": "capability library",
   "purpose": "Add schedules, questions, observation watches and operation tracking to a Unified host.",
-  "ref": "0e98f1ae1db60e490a0d7354ab9d948a5cca6345",
+  "ref": "2ab0bccbdb5a1d034c7afb807b4c8c2b029f70a1",
   "repository": "microsoft/amplifier-unified-capability-operations",
   "roles": [],
   "start_cta": {
@@ -96,5 +98,5 @@
     "Agent Instance",
     "Experience"
   ],
-  "visibility": "private"
+  "visibility": "public"
 }
